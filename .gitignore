@@ -1,0 +1,24 @@
+# Compiled/temporary files
+*.elc
+*.eln
+*~
+\#*\#
+.\#*
+/auto-save-list/
+/eshell/history
+/.cache/
+
+# Packages/build
+/elpa/
+/straight/
+/.venv/
+/node_modules/
+
+# Project artifacts
+/.projectile
+/.dir-locals.el~
+/dist/
+/build/
+
+# Logs
+*.log

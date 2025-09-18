@@ -1,0 +1,67 @@
+#+title: ert-flow
+#+subtitle: Auto-run and results panel for ERT (Emacs Lisp)
+
+** Briefly
+- Automates the loop “edit → test → inspect errors”.
+- Runs tests via an external command (by default), parses output (JSON or batch), and shows results in a right-side panel.
+- Includes a watcher (after-save) and one-shot copying of failures.
+
+** Installation
+- Put ert-flow.el into your load-path and (require 'ert-flow).
+- Minimum Emacs version: 27+.
+
+** Quick start
+- In a project that has tests/run-tests.el, run:
+  M-x ert-flow-mode
+  M-x ert-flow-detect-runner
+  M-x ert-flow-run
+- The panel will appear on the right. Keys in the panel:
+  r — run tests
+  f — run only failed (if ert-flow-external-failed-args-function is configured)
+  w — toggle watcher (after-save/file-notify)
+  d — auto-detect the run command (looks for tests/run-tests.el)
+  c — copy last failures
+  x — clear the panel
+  o — jump to test definition (if tests are loaded in Emacs)
+  RET — show test details
+
+Manual configuration of the run command
+- Example:
+  (setq ert-flow-external-command
+        '("emacs" "-Q" "--batch" "-l" "/home/az/Code/acapella/tests/run-tests.el"))
+
+** Output parsing
+- ert-flow-parser: 'auto (default) | 'json | 'ert-batch
+  'auto — tries to parse JSON; on failure falls back to standard ERT batch output.
+- For JSON mode it’s recommended that your run-tests.el prints an object like:
+  {
+    "summary": {"total": 12, "passed": 10, "failed": 1, "error": 1, "duration_ms": 8342},
+    "tests": [
+      {"name":"ns/test-1","status":"pass"},
+      {"name":"ns/test-2","status":"fail","message":"expected X","details":"..."}
+    ]
+  }
+
+** Watcher
+- Off by default. Enable with w in the panel or M-x ert-flow-toggle-watch.
+- Modes: after-save (default) or file-notify.
+  For file-notify you can configure recursion depth (ert-flow-file-notify-max-depth),
+  include/exclude by regexp (ert-flow-watch-include-regexp / ert-flow-watch-exclude-regexp).
+  Debounce is configured via ert-flow-debounce-seconds.
+
+** Notes
+- The external command is executed from the project root (project.el).
+- Icons are Unicode; no external dependencies required.
+- Errors in the filter/sentinel won’t crash Emacs; see the variable ert-flow-log-enabled for debugging.
+
+** Tests
+- Run the package’s batch tests:
+  emacs -Q --batch -L . -l ert-flow.el -l tests/ert-flow-tests.el -f ert-run-tests-batch-and-exit
+- Or via a script:
+  emacs -Q --batch -l tests/run-tests.el
+- Interactively:
+  M-x ert RET t
+
+License
+- MIT 
+
