@@ -113,5 +113,43 @@
         (should (string-match-p "ns/e1: kaboom" s))
         (should (string-match-p "=== ns/f1 ===" s))))))
 
+(ert-deftest ert-flow/parse-batch-summary-keys ()
+  (let* ((out (ert-flow-tests--sample-batch))
+         (parsed (ert-flow--parse-batch-output out))
+         (summary (car parsed)))
+    (dolist (k '(passed failed error skipped))
+      (should (assoc k summary)))
+    ;; duration-ms may be nil if no time was present; the sample has no numeric time,
+    ;; so only check that the key exists (may be nil).
+    (should (assoc 'duration-ms summary))))
+
+(ert-deftest ert-flow/parse-json-summary-keys ()
+  (let* ((out (ert-flow-tests--sample-json))
+         (parsed (ert-flow--parse-json-output out))
+         (summary (car parsed)))
+    (dolist (k '(passed failed error))
+      (should (assoc k summary)))
+    (should (assoc 'duration-ms summary))))
+
+(ert-deftest ert-flow/render-smoke ()
+  (let* ((root (ert-flow--project-root))
+         (sess (ert-flow--get-session root))
+         (bufname (ert-flow--session-panel-name root)))
+    (setf (ert-flow--session-last-summary sess) '((total . 1) (unexpected . 0)))
+    (setf (ert-flow--session-last-results sess)
+          (list (list :name "ns/ok" :status 'pass :suite "ns")))
+    (with-current-buffer (get-buffer-create bufname)
+      (let ((ert-flow--panel-buffer-name bufname))
+        (ert-flow--render)
+        (should (string-match-p "Summary" (buffer-string)))))))
+
+(ert-deftest ert-flow/render-header-shows-runner ()
+  (let* ((root (ert-flow--project-root))
+         (bufname (ert-flow--session-panel-name root)))
+    (with-current-buffer (get-buffer-create bufname)
+      (let ((ert-flow--panel-buffer-name bufname))
+        (ert-flow--render)
+        (should (string-match-p "Runner:" (buffer-string)))))))
+
 (provide 'ert-flow-tests)
 ;;; ert-flow-tests.el ends here
