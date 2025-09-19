@@ -127,6 +127,7 @@ Detect runner
   - M-x ert-flow-switch-session
   - M-x ert-flow-kill-session / M-x ert-flow-kill-all-sessions
   - M-x ert-flow-list-sessions
+  - M-x ert-flow-dashboard
 - Panel names can be customized with ert-flow-session-naming-function.
 
 ** Advanced config (per-session via .dir-locals)

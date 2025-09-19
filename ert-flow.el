@@ -404,15 +404,21 @@ Return a plist:
           :total total :unexpected unexpected :time time-str)))
 
 (defun ert-flow--batch-pass2-final-status (lines name->status all-names)
-  "Update NAME->STATUS and ALL-NAMES from final section in LINES."
+  "Update NAME->STATUS and ALL-NAMES from final section in LINES.
+
+Understands additional markers if present:
+- XFAIL  → xfail (expected failure)
+- XPASS  → fail  (unexpected pass is treated as failure)"
   (dolist (line lines)
-    (when (string-match "^[ \t]*\\(FAILED\\|ERROR\\|SKIPPED\\)[ \t]+\\(.+\\)$" line)
+    (when (string-match "^[ \t]*\\(FAILED\\|ERROR\\|SKIPPED\\|XFAIL\\|XPASS\\)[ \t]+\\(.+\\)$" line)
       (let* ((kw (match-string 1 line))
              (nm (ert-flow--string-trim (match-string 2 line)))
              (st (pcase kw
-                   ("FAILED" 'fail)
-                   ("ERROR"  'error)
+                   ("FAILED"  'fail)
+                   ("ERROR"   'error)
                    ("SKIPPED" 'skip)
+                   ("XFAIL"   'xfail)
+                   ("XPASS"   'fail)
                    (_ 'fail))))
         (puthash nm t all-names)
         (puthash nm st name->status)))))
@@ -1660,6 +1666,90 @@ Each row shows:
                                    'action (lambda (_)
                                              (ert-flow-kill-session root)
                                              (ert-flow-list-sessions)))
+               (insert "\n\n")))
+           ert-flow--sessions))))
+    (display-buffer buf)))
+
+;;;###autoload
+(defun ert-flow-dashboard ()
+  "Show a summary dashboard across all ert-flow sessions with quick actions.
+
+Displays:
+- Global active/queued process counts
+- Per-session: project name, runner, watch mode/state, last summary counters
+- Buttons: [Open] [Run] [Watch On/Off] [Kill]
+
+This view is read-only and uses text buttons for actions."
+  (interactive)
+  (let ((buf (get-buffer-create "*ert-flow: dashboard*")))
+    (with-current-buffer buf
+      (let ((inhibit-read-only t))
+        (erase-buffer)
+        (special-mode)
+        (insert (propertize "ert-flow dashboard\n\n" 'face 'bold))
+        (insert (format "Processes: active %d, queued %d\n"
+                        ert-flow--active-run-count
+                        (length ert-flow--run-queue)))
+        (insert (format "Sessions: %d\n\n" (hash-table-count ert-flow--sessions)))
+        (if (= (hash-table-count ert-flow--sessions) 0)
+            (insert "No active sessions.\n")
+          (maphash
+           (lambda (_root s)
+             (let* ((root (ert-flow--session-root s))
+                    (panel (ert-flow--session-panel-buf-name s))
+                    (sess-name (file-name-nondirectory (directory-file-name root)))
+                    (watch-on (ert-flow--session-watch-enabled s))
+                    (runner (ert-flow--conf s 'runner ert-flow-runner))
+                    (watch-mode (ert-flow--conf s 'watch-mode ert-flow-watch-mode))
+                    (proc (and (process-live-p (ert-flow--session-process s)) "active"))
+                    (sum (ert-flow--session-last-summary s))
+                    (p (or (and sum (alist-get 'passed sum)) 0))
+                    (f (or (and sum (alist-get 'failed sum)) 0))
+                    (e (or (and sum (alist-get 'error sum)) 0))
+                    (sk (or (and sum (alist-get 'skipped sum)) 0))
+                    (tot (or (and sum (alist-get 'total sum)) 0)))
+               (insert (propertize (format "- %s (%s)\n" panel sess-name) 'face 'bold))
+               (insert (format "  Runner: %s | Mode: %s | Watch: %s | Proc: %s\n"
+                               (if (eq runner 'in-emacs-ert) "in-emacs" "external")
+                               watch-mode (if watch-on "On" "Off") (or proc "idle")))
+               (insert (format "  Summary: total %d (P:%d F:%d E:%d S:%d)\n" tot p f e sk))
+               ;; Buttons
+               (insert "  ")
+               (insert-text-button "[Open]"
+                                   'face 'link 'mouse-face 'highlight 'follow-link t
+                                   'help-echo "Open panel"
+                                   'action (lambda (_)
+                                             (let* ((buf (get-buffer (ert-flow--session-panel-name root)))
+                                                    (sess (ert-flow--get-session root))
+                                                    (side (ert-flow--conf sess 'panel-side ert-flow-panel-side))
+                                                    (width (ert-flow--conf sess 'panel-width ert-flow-panel-width)))
+                                               (unless buf
+                                                 (setq buf (get-buffer-create (ert-flow--session-panel-name root))))
+                                               (display-buffer-in-side-window
+                                                buf `((side . ,side) (window-width . ,width))))))
+               (insert "  ")
+               (insert-text-button "[Run]"
+                                   'face 'link 'mouse-face 'highlight 'follow-link t
+                                   'help-echo "Run tests for this session"
+                                   'action (lambda (_)
+                                             (let ((default-directory root))
+                                               (ert-flow-run)
+                                               (message "ert-flow: scheduled run for %s" root))))
+               (insert "  ")
+               (insert-text-button (format "[Watch %s]" (if watch-on "Off" "On"))
+                                   'face 'link 'mouse-face 'highlight 'follow-link t
+                                   'help-echo "Toggle watch"
+                                   'action (lambda (_)
+                                             (let ((default-directory root))
+                                               (ert-flow-toggle-watch)
+                                               (ert-flow-dashboard))))
+               (insert "  ")
+               (insert-text-button "[Kill]"
+                                   'face 'link 'mouse-face 'highlight 'follow-link t
+                                   'help-echo "Kill this session"
+                                   'action (lambda (_)
+                                             (ert-flow-kill-session root)
+                                             (ert-flow-dashboard)))
                (insert "\n\n")))
            ert-flow--sessions))))
     (display-buffer buf)))
