@@ -1,12 +1,11 @@
-#+title: ert-flow
-#+subtitle: Auto-run and results panel for ERT (Emacs Lisp)
-
-#+caption: Ert-Flow in action
-#+attr_org: :width 500
-[[./screenshot-ert-flow.png]]
+#+title: ert-flow - Auto-run and results panel for ERT (Emacs Lisp)
 
 Software is a conversation between what we intended and what actually runs. Tests translate between these two, but the loop “edit → run → read → fix → repeat” too often leaks our attention in tiny drips.
 Ert-Flow exists to keep the loop flowing. It watches your project, runs tests when it makes sense (not when you sneeze), parses whatever your runner emits, and shows a crisp, actionable panel near your code.
+
+#+caption: Ert-Flow in action
+#+attr_org: :width 900
+[[./screenshot-ert-flow.png]]
 
 * Features at a glance
 - Right-side results panel grouped by suite; foldable sections with status icons.
@@ -31,13 +30,17 @@ Ert-Flow exists to keep the loop flowing. It watches your project, runs tests wh
   - Optional: all-the-icons for fancy toolbar/header icons.
 ** Package managers
   - Straight.el (local checkout):
-    - (use-package ert-flow
+  #+begin_src 
+(use-package ert-flow
         :load-path "~/Code/ert-flow"
         :commands (ert-flow-mode ert-flow-open-panel)
         :init (setq ert-flow-run-on-open t))
+  #+end_src
 ** Manual
     - Place ert-flow.el, ert-flow-headerline.el, ert-flow-view-controls.el, ert-flow-controls-icons.el on your load-path.
-    - (require 'ert-flow)
+      #+begin_src 
+     (require 'ert-flow)
+      #+end_src
 ** Optional fonts
   - For all-the-icons: install the fonts and the all-the-icons package. If not present, ert-flow uses Unicode/text gracefully.
 
@@ -171,13 +174,15 @@ Ert-Flow exists to keep the loop flowing. It watches your project, runs tests wh
 ** Minimal external command
   - (setq ert-flow-external-command '("emacs" "-Q" "--batch" "-l" "tests/run-tests.el"))
 ** Per-project .dir-locals (session-level settings)
-  - ((lisp-mode
+#+begin_src 
+   ((lisp-mode
      (ert-flow-runner . external-command)
      (ert-flow-external-command . ("emacs" "-Q" "--batch" "-l" "tests/run-tests.el"))
      (ert-flow-parser . auto)
      (ert-flow-watch-mode . after-save)
      (ert-flow-debounce-seconds . 0.5)
      (ert-flow-file-notify-max-depth . 2)))
+#+end_src
 ** Run only failed externally (example adapter)
 #+begin_src 
 (setq ert-flow-external-failed-args-function
@@ -191,13 +196,15 @@ Ert-Flow exists to keep the loop flowing. It watches your project, runs tests wh
   - summary: {total, passed, failed, error, skipped, duration_ms?, time?}
   - tests: array of {name, status, message?, details?, file?, line?, tags?}
 *** Example
-  - {
+#+begin_src 
+  {
       "summary": {"total": 12, "passed": 10, "failed": 1, "error": 1, "duration_ms": 8342},
       "tests": [
         {"name":"ns/test-1","status":"pass"},
         {"name":"ns/test-2","status":"fail","message":"expected X","details":"..."}
       ]
     }
+#+end_src
 *** Notes
   - status is case-insensitive and accepts pass/ok, fail/failed, error, skip/skipped, xfail.
   - If duration_ms is missing, ert-flow computes elapsed time when possible.
