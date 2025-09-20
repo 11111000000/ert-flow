@@ -1,156 +1,278 @@
 #+title: ert-flow
 #+subtitle: Auto-run and results panel for ERT (Emacs Lisp)
 
-** Briefly
-- Automates the loop “edit → test → inspect errors”.
-- Runs tests via an external command (by default), parses output (JSON or batch), and shows results in a right-side panel.
-- Includes a watcher (after-save/file-notify) with debounce.
-- Colored toolbar with icons (Unicode by default; optional all-the-icons for rich glyphs).
-- Panel header shows Project, Runner (external/in-emacs), Watch mode, duration, and process counts.
-- Copy failures includes full backtraces (details) for easy sharing.
+- Software is a conversation between what we intended and what actually runs. Tests translate between these two, but the loop “edit → run → read → fix → repeat” too often leaks our attention in tiny drips.
+- ert-flow exists to keep the loop flowing. It watches your project, runs tests when it makes sense (not when you sneeze), parses whatever your runner emits, and shows a crisp, actionable panel near your code.
+- Goals:
+  - Be invisible when all is well; be obvious and helpful when it isn’t.
+  - Scale from tiny packages to larger suites by mixing in-Emacs speed with external-process robustness.
+  - Offer humane ergonomics: a stable right-side panel, a readable header-line, clickable controls, and copy-pasteable failure reports.
+- Emacs Lisp humor, promised: ert-flow will not fix your tests, your sleep schedule, or your CI bill. It does, however, push buttons for you — which is, frankly, most of modern engineering.
 
-** Installation
-- Put ert-flow.el into your load-path and (require 'ert-flow).
-- Minimum Emacs version: 27+.
+* Features at a glance
+- Right-side results panel grouped by suite; foldable sections with status icons.
+- Two runner modes:
+  - external-command (default): robust, concurrent, parses stdout (JSON or ERT batch).
+  - in-emacs-ert: synchronous, precise file/line/tags, instant goto-definition.
+- Parser modes: auto (JSON → batch fallback), JSON, or ERT batch.
+- Watcher: after-save or file-notify; debounce; auto-disable on idle sessions.
+- Concurrency: cap active runs; queue the rest; live counters in the Status block.
+- Header-line controls: run, run failed, watch toggle, detect command, copy failures, clear, goto, sessions, dashboard, logging toggle.
+- Copy failures: plain/org/markdown; includes full backtraces and optional stdout/stderr tails.
+- Multi-session aware: one panel per project; session list and dashboard across projects.
+- Unicode by default; optional all-the-icons for richer glyphs (with graceful degradation).
+- Defensive by design: parsers are tolerant, errors logged optionally, UI stays up.
 
-** Quick start
-- In a project that has tests/run-tests.el, run:
-  M-x ert-flow-mode
-  M-x ert-flow-detect-runner
-  M-x ert-flow-run
-- The panel will appear on the right. Keys in the panel:
-  r — run tests
-  f — run only failed (if ert-flow-external-failed-args-function is configured)
-  w — toggle watcher (after-save/file-notify)
-  d — auto-detect the run command (looks for tests/run-tests.el, also supports cask/nix)
-  c — copy last failures
-  x — clear the panel
-  o — jump to test definition (if tests are loaded in Emacs)
-  TAB — fold/unfold a group (suite)
-  S-TAB — fold/unfold all groups
-  RET — show test details
+* Installation
+** Requirements
+  - Emacs 27 or newer.
+  - Optional: all-the-icons for fancy toolbar/header icons.
+** Package managers
+  - Straight.el (local checkout):
+    - (use-package ert-flow
+        :load-path "~/Code/ert-flow"
+        :commands (ert-flow-mode ert-flow-open-panel)
+        :init (setq ert-flow-run-on-open t))
+** Manual
+    - Place ert-flow.el, ert-flow-headerline.el, ert-flow-view-controls.el, ert-flow-controls-icons.el on your load-path.
+    - (require 'ert-flow)
+** Optional fonts
+  - For all-the-icons: install the fonts and the all-the-icons package. If not present, ert-flow uses Unicode/text gracefully.
 
-Manual configuration of the run command
-- Example:
-  (setq ert-flow-external-command
-        '("emacs" "-Q" "--batch" "-l" "/home/az/Code/acapella/tests/run-tests.el"))
+* Quick start
+- In your project:
+  - M-x ert-flow-mode
+  - M-x ert-flow-open-panel
+  - M-x ert-flow-detect-runner (auto-finds tests/run-tests.el, nix flake, or Cask)
+  - M-x ert-flow-run
+- Panel keybindings (inside the results buffer):
+  - r — Run tests
+  - f — Run only failed (if external argv + failed-args are configured, else runs all)
+  - w — Toggle watcher (after-save/file-notify per session config)
+  - d — Detect runner
+  - c — Copy last failures
+  - x — Clear panel
+  - o — Goto test definition
+  - RET — Open details for test at point
+  - TAB — Fold/unfold group (suite); S-TAB — fold/unfold all
+  - n/p (or j/k) — Next/previous item
+  - Filters: P/F/E/S/A — status filters; / — name regexp; T — tags; C — clear filters
 
-** Runner modes
-- Configure which backend to use via =ert-flow-runner=:
-  - =external-command= (default): runs an external process, parses stdout (JSON or ERT batch).
-  - =in-emacs-ert=: runs tests inside Emacs using ERT (=ert-run-tests-batch=), then parses output.
-    Pros: no external process, instant access to loaded tests for “Goto” navigation.
-    Cons: synchronous; long suites can temporarily block UI. Use external mode for heavy runs.
+* Concepts
+- Sessions
+  - One session per project (project.el root). Each holds: panel buffer, details buffer, watcher state, last results/summary, process, queue.
+- Runner modes
+  - external-command: launches an external process; robust for long suites; concurrent across sessions; parses stdout/stderr.
+  - in-emacs-ert: runs ERT in-process; precise metadata; synchronous (may block UI for long runs).
+- Parsers
+  - auto tries JSON first; falls back to batch ERT. You can force JSON or batch explicitly.
+- Watchers
+  - after-save: cheap and simple; runs after relevant buffers are saved.
+  - file-notify: OS-level directory watches; configurable depth; include/exclude regexps.
+  - Debounce and auto-disable-on-idle keep noise and CPU down.
+- Concurrency
+  - Global cap on concurrent runs with FIFO queue. Status block shows “Proc: active N, queued M”.
+- Header-line controls
+  - Clickable, icon/text-based, with mouse-1 and tooltips; reflects toggle states (watch/logging).
 
-Detect runner
-- M-x ert-flow-detect-runner tries common entrypoints:
+* Commands (interactive)
+** Core flow
+  - ert-flow-mode — global minor mode; opens panel on enable.
+  - ert-flow-open-panel — open/focus session panel for current project.
+  - ert-flow-run — run tests according to per-session runner.
+  - ert-flow-run-failed — re-run failures/errors only (when available), else run all.
+  - ert-flow-detect-runner — detect external command (tests/run-tests.el, nix flake, Cask).
+** Panel operations
+  - ert-flow-toggle-watch — toggle watcher for current session.
+  - ert-flow-copy-failures — copy failures with backtraces (plain/org/markdown).
+  - ert-flow-clear — clear panel and last results.
+  - ert-flow-open-details-at-point — show details view for current test.
+  - ert-flow-goto-definition-at-point — jump to test function if loaded.
+  - Navigation: ert-flow-next-item, ert-flow-previous-item, ert-flow-toggle-group-at-point, ert-flow-toggle-all-groups.
+  - Filters: ert-flow-panel-filter-pass/fail/error/skip/all, ert-flow-panel-set-name-filter, ert-flow-panel-set-tags-filter, ert-flow-panel-filter-clear.
+** Sessions and dashboard
+  - ert-flow-list-sessions — list sessions with quick actions.
+  - ert-flow-switch-session — jump to another session’s panel.
+  - ert-flow-kill-session / ert-flow-kill-all-sessions — clean up.
+  - ert-flow-dashboard — global overview (processes, sessions, summaries).
+** Debugging and maintenance
+  - ert-flow-toggle-logging — toggle lightweight logs.
+  - ert-flow-dump-concurrency — print concurrency state to /Messages/.
+  - ert-flow-restart — restart ert-flow (cleans sessions/queues/timers, re-opens panel).
+
+* Configuration reference (customize these)
+** Core runner and parsing
+| Variable                                  | Type                               | Default             | Description                                                                 |
+|-------------------------------------------+------------------------------------+---------------------+-----------------------------------------------------------------------------|
+| ert-flow-runner                           | choice: external-command/in-emacs-ert | external-command    | Backend to execute tests.                                                   |
+| ert-flow-parser                           | choice: auto/json/ert-batch        | auto                | Parsing strategy for test output.                                           |
+| ert-flow-external-command                 | list argv or string (shell)        | nil                 | External command to run tests. If string, executed via SHELL -lc.           |
+| ert-flow-external-failed-args-function    | function or nil                    | nil                 | (fn failed-names) → extra argv to run only failures (requires argv form).   |
+
+** Watcher and re-run ergonomics
+| Variable                         | Type                              | Default  | Description                                                                |
+|----------------------------------+-----------------------------------+----------+----------------------------------------------------------------------------|
+| ert-flow-watch-mode              | choice: after-save/file-notify/nil| after-save | How to watch the project for changes.                                      |
+| ert-flow-debounce-seconds        | number                            | 0.7      | Delay before running after a triggering change.                            |
+| ert-flow-watch-include-regexp    | regexp or nil                     | \.el\’   | Only paths matching this are eligible (nil = include all).                 |
+| ert-flow-watch-exclude-regexp    | regexp or nil                     | common dirs | Exclude matching paths (.git, .direnv, node_modules, build, dist…).     |
+| ert-flow-file-notify-max-depth   | integer                           | 3        | Recursion depth for file-notify watchers.                                  |
+| ert-flow-session-idle-seconds    | integer                           | 120      | Auto-disable watch for idle sessions after this many seconds.              |
+| ert-flow-idle-gc-interval        | integer                           | 30       | Interval between idle GC checks.                                           |
+
+** Concurrency and resources
+| Variable                       | Type     | Default | Description                                                       |
+|--------------------------------+----------+---------+-------------------------------------------------------------------|
+| ert-flow-max-concurrent-runs   | integer  | 3       | Global cap on parallel test processes (across sessions).          |
+| ert-flow-max-raw-output-bytes  | int or nil | 1048576 | Cap stored raw stdout/stderr per session (nil = unlimited).     |
+
+** Panel, UI, and header-line
+| Variable                         | Type                        | Default | Description                                                                    |
+|----------------------------------+-----------------------------+---------+--------------------------------------------------------------------------------|
+| ert-flow-panel-side              | choice: right/bottom/left/top | right   | Where to display the side panel.                                               |
+| ert-flow-panel-width             | integer                     | 42      | Panel width in columns.                                                        |
+| ert-flow-icons                   | boolean                     | t       | Show per-test status icons (Unicode or all-the-icons).                         |
+| ert-flow-toolbar-style           | choice: auto/icons/text     | auto    | Prefer icons when available, force icons, or always text.                      |
+| ert-flow-view-headerline-enable  | boolean                     | t       | Show clickable controls in the panel’s header-line.                            |
+| ert-flow-headerline-controls-order | list of symbols/:gap      | (run run-failed :gap watch :gap copy clear :gap detect goto :gap sessions dashboard :gap logging) | Order of header-line controls. |
+| ert-flow-controls-registry       | alist (advanced)            | see code| Declarative controls (labels/icons/commands).                                  |
+
+** Icon settings (if you use all-the-icons)
+| Variable                            | Type            | Default | Description                                                   |
+|-------------------------------------+-----------------+---------+---------------------------------------------------------------|
+| ert-flow-controls-use-graphic-icons | boolean         | t       | Prefer all-the-icons when available.                          |
+| ert-flow-controls-icon-height       | number          | 0.9     | Uniform icon height in header-line.                           |
+| ert-flow-controls-icon-raise        | number          | 0.11    | Vertical raise via ‘display’ property (fine-tunes alignment). |
+| ert-flow-controls-icon-map          | alist           | mapping | Control-key → (provider . name) or per-state map.             |
+| ert-flow-controls-icon-face-map     | alist           | mapping | Optional face overrides for non-toggle icons.                 |
+| ert-flow-controls-toggle-on-face    | face/plist      | gray85  | Face for toggle icons when ON.                                |
+| ert-flow-controls-toggle-off-face   | face/plist      | gray60  | Face for toggle icons when OFF.                               |
+
+** Copy failures and reporting
+| Variable                        | Type                      | Default | Description                                                                 |
+|---------------------------------+---------------------------+---------+-----------------------------------------------------------------------------|
+| ert-flow-copy-format            | choice: plain/org/markdown| plain   | Format of copied failure report.                                            |
+| ert-flow-copy-backtrace-limit   | int or nil               | nil     | Truncate each details/backtrace to this many chars.                         |
+| ert-flow-copy-include-stdout    | boolean                  | nil     | Include raw stdout tail (capped by the same limit).                         |
+| ert-flow-copy-include-stderr    | boolean                  | nil     | Include captured stderr tail (capped by the same limit).                    |
+
+** Session quality of life
+| Variable                             | Type      | Default | Description                                                       |
+|--------------------------------------+-----------+---------+-------------------------------------------------------------------|
+| ert-flow-run-on-enable               | boolean   | nil     | If non-nil, run once when ert-flow-mode is enabled.               |
+| ert-flow-auto-detect-on-open         | boolean   | t       | Try to auto-detect external command when opening the panel.       |
+| ert-flow-run-on-open                 | boolean   | t       | First open triggers a run when feasible.                          |
+| ert-flow-log-enabled                 | boolean   | nil     | Print lightweight logs to /Messages/ (toggled via command).       |
+| ert-flow-session-naming-function     | function  | default | (fn root) → name for “*ert-flow: NAME/” buffer.                   |
+
+* Example configurations
+** Minimal external command
+  - (setq ert-flow-external-command '("emacs" "-Q" "--batch" "-l" "tests/run-tests.el"))
+** Per-project .dir-locals (session-level settings)
+  - ((lisp-mode
+     (ert-flow-runner . external-command)
+     (ert-flow-external-command . ("emacs" "-Q" "--batch" "-l" "tests/run-tests.el"))
+     (ert-flow-parser . auto)
+     (ert-flow-watch-mode . after-save)
+     (ert-flow-debounce-seconds . 0.5)
+     (ert-flow-file-notify-max-depth . 2)))
+** Run only failed externally (example adapter)
+#+begin_src 
+(setq ert-flow-external-failed-args-function
+          (lambda (names)
+            (when names
+              (list "--" "--tests" (mapconcat #'identity names ",")))))
+#+end_src
+
+** JSON output (recommended schema)
+*** Top-level object
+  - summary: {total, passed, failed, error, skipped, duration_ms?, time?}
+  - tests: array of {name, status, message?, details?, file?, line?, tags?}
+*** Example
+  - {
+      "summary": {"total": 12, "passed": 10, "failed": 1, "error": 1, "duration_ms": 8342},
+      "tests": [
+        {"name":"ns/test-1","status":"pass"},
+        {"name":"ns/test-2","status":"fail","message":"expected X","details":"..."}
+      ]
+    }
+*** Notes
+  - status is case-insensitive and accepts pass/ok, fail/failed, error, skip/skipped, xfail.
+  - If duration_ms is missing, ert-flow computes elapsed time when possible.
+
+* Using the panel effectively
+** Start with Status
+  - Counters, duration, active/queued processes, project, runner, mode, watch state, parser.
+** Groups (suites)
+  - Fold green-all-pass groups (auto-initialized); expand for failures/errors.
+  - Click a test to see details; press o to jump to its definition (if loaded).
+** Header-line controls
+  - Mouse-1 on icons: run, run failed, toggle watch, detect, copy, clear, goto, sessions, dashboard, logging.
+  - Tooltips explain each control. If icons aren’t available, text labels are used.
+
+** Runner detection (external)
+- M-x ert-flow-detect-runner tries:
   - tests/run-tests.el or test/run-tests.el → emacs -Q --batch -l <path>
   - flake.nix → nix run .#tests
   - Cask → cask exec ert-runner
-- If multiple are found, you will be prompted to choose.
+- If multiple entrypoints are found, you’ll be prompted to pick one.
 
-- Example (in-emacs):
-  (setq ert-flow-runner 'in-emacs-ert)
+* Tips and tricks
+- Prefer in-emacs-ert to quickly jump to failures while iterating on a test file, switch to external for big suites.
+- Set a small debounce (0.3–0.7s) to keep the flow without running on every keystroke-save combo.
+- Use filters (P/F/E/S, / regexp, T tags) to focus on what matters right now.
+- Copy failures in org format for issue trackers that love org’s structured blocks. Your future self (and coworkers) will thank you.
 
-- Example (external):
-  (setq ert-flow-runner 'external-command)
-  (setq ert-flow-external-command
-        '("emacs" "-Q" "--batch" "-l" "tests/run-tests.el"))
+* Troubleshooting (and gentle humor)
+- Icons look plain
+  - That’s okay! Unicode mode is intentional. Install all-the-icons for fancier looks. If your fonts and ligatures behave, Emacs will too (most of the time).
+- in-emacs-ert freezes Emacs
+  - It’s synchronous by design. For long suites, pick external-command. Coffee is optional but recommended.
+- “Run failed” still runs everything
+  - Ensure ert-flow-external-command is a list (argv), not a shell string, and set ert-flow-external-failed-args-function.
+- Nothing happens on save
+  - Check ert-flow-watch-mode, include/exclude regexps, and whether your file is under the project root (project.el).
+- JSON parser fails mysteriously
+  - Keep batch fallback via ‘auto’. If your runner prints banners around JSON, ert-flow tries to snip “{…}” out; when in doubt, emit a clean JSON blob.
 
-** Output parsing
-- ert-flow-parser: 'auto (default) | 'json | 'ert-batch
-  'auto — tries to parse JSON; on failure falls back to standard ERT batch output.
-- For JSON mode it’s recommended that your run-tests.el prints an object like:
-  {
-    "summary": {"total": 12, "passed": 10, "failed": 1, "error": 1, "duration_ms": 8342},
-    "tests": [
-      {"name":"ns/test-1","status":"pass"},
-      {"name":"ns/test-2","status":"fail","message":"expected X","details":"..."}
-    ]
-  }
+* Faces (customize for your theme)
+- Result faces
+  - ert-flow-face-pass, ert-flow-face-fail, ert-flow-face-error, ert-flow-face-skip
+- Toolbar/header-line faces
+  - ert-flow-headerline
+  - Icon faces: ert-flow-controls-icon-on/off, or overrides via the icon face map.
+- Toolbar button faces (legacy in-buffer toolbar is superseded by header-line controls, but faces remain available)
 
-** Watcher
-- Off by default. Enable with w in the panel or M-x ert-flow-toggle-watch.
-- Modes: after-save (default) or file-notify.
-  For file-notify you can configure recursion depth (ert-flow-file-notify-max-depth),
-  include/exclude by regexp (ert-flow-watch-include-regexp / ert-flow-watch-exclude-regexp).
-  Debounce is configured via ert-flow-debounce-seconds.
+* Developer notes (optional)
+- Header-line controls are declared in ert-flow-view-controls.el; icons live in ert-flow-controls-icons.el; the renderer and cache are in ert-flow-headerline.el.
+- External runs use make-process with stderr captured separately; sentinel selects stdout vs stderr for parsing, trims buffers according to ert-flow-max-raw-output-bytes.
+- In-Emacs runs enrich results directly from ERT objects: file/line, tags, and backtrace pretty-printing.
 
-** Concurrency and idle
-- Concurrency: ert-flow limits the number of concurrent test processes with
-  the variable ert-flow-max-concurrent-runs (default: 3). Extra runs are queued
-  and started automatically as slots free up. The panel shows “Proc: active N, queued M”.
-- Idle auto-disable: sessions with watch enabled are monitored by an idle GC timer.
-  If a session remains inactive for ert-flow-session-idle-seconds (default: 120),
-  its watcher is automatically disabled to save resources.
+* Contributing
+- Issues and PRs are welcome. Please include:
+  - Emacs version, OS, and how you run tests (external vs in-Emacs).
+  - A snippet of stdout/stderr or JSON (trimmed is fine) when parsing is the issue.
+  - A screenshot of the panel if a UI quirk is suspected (optional but delightful).
+* Tests
+  - You can run package tests in batch:
+    - emacs -Q --batch -L . -l ert-flow.el -l tests/ert-flow-tests.el -f ert-run-tests-batch-and-exit
+  - Or via your project’s tests/run-tests.el.
 
-** Copying failures
-- Command: M-x ert-flow-copy-failures copies failures with full backtraces.
-- Format is configurable via ert-flow-copy-format: plain (default), org, markdown.
-- Backtrace length can be limited with ert-flow-copy-backtrace-limit (nil = no limit).
-- Optionally include raw STDOUT and STDERR tails:
-  - ert-flow-copy-include-stdout — include STDOUT tail
-  - ert-flow-copy-include-stderr — include STDERR tail
-  Tail length uses the same limit variable (ert-flow-copy-backtrace-limit).
-- Plain format example:
-  ERT failures (2024-01-01 12:00:00): 2
-  - ns/f1: boom
-  - ns/e1: kaboom
+* License
+- MIT. Share, remix, and don’t blame us if your tests discover new truths about your code.
 
-  === ns/f1 ===
-  Assertion failed...
-
-  === ns/e1 ===
-  Condition: ...
-
-** Tips
-- Click a test to open details; press o to jump to its definition.
-- Toolbar buttons are clickable; hover for help.
-
-** Notes
-- The external command is executed from the project root (project.el).
-- Icons: Unicode by default; optional all-the-icons (if installed) enables colored glyphs on the toolbar and status icons.
-- Errors in the filter/sentinel won’t crash Emacs; see the variable ert-flow-log-enabled for debugging.
-
-** Tests
-- Run the package’s batch tests:
-  emacs -Q --batch -L . -l ert-flow.el -l tests/ert-flow-tests.el -f ert-run-tests-batch-and-exit
-- Or via a script:
-  emacs -Q --batch -l tests/run-tests.el
-- Interactively:
-  M-x ert RET t
-
-** Sessions and multi-project
-- Each project (project.el root) has its own session: panel, watcher, process, queue.
-- Useful commands:
-  - M-x ert-flow-open-panel
-  - M-x ert-flow-switch-session
-  - M-x ert-flow-kill-session / M-x ert-flow-kill-all-sessions
-  - M-x ert-flow-list-sessions
-  - M-x ert-flow-dashboard
-- Panel names can be customized with ert-flow-session-naming-function.
-
-** Advanced config (per-session via .dir-locals)
-- You can set variables per project:
-  ((lisp-mode
-    (ert-flow-runner . external-command)
-    (ert-flow-external-command . ("emacs" "-Q" "--batch" "-l" "tests/run-tests.el"))
-    (ert-flow-parser . auto)
-    (ert-flow-watch-mode . after-save)
-    (ert-flow-debounce-seconds . 0.5)
-    (ert-flow-file-notify-max-depth . 2)))
-- Raw stdout memory cap: ert-flow-max-raw-output-bytes (default 1 MiB).
-- Include/exclude watch filters: ert-flow-watch-include-regexp / ert-flow-watch-exclude-regexp.
-- Concurrency limit: ert-flow-max-concurrent-runs (default 3).
-- Idle auto-disable of watchers: ert-flow-session-idle-seconds (default 120).
-
-** Roadmap / next steps
-- In-Emacs reporter: capture precise file/line/tags/duration without parsing text.
-- Dashboard: optional summary view across sessions (active/queued/watch state).
-- Parsers: additional formats (TAP), custom pluggable parsers.
-- UX: richer filters (by status/tags), search in panel, better folding persistence.
-- Packaging: MELPA recipe, changelog, more examples (JSON reporter for run-tests.el).
-
-License
-- MIT 
-
+* Roadmap
+- In-Emacs reporter
+  - Capture precise file/line/tags/duration without text parsing; unify with in-emacs-ert path.
+- Dashboard++
+  - Filterable, sortable multi-session view; quick actions; persistent layout.
+- Parsers
+  - TAP and pluggable custom parsers; richer JSON schema (attachments, artifacts).
+- UX
+  - Status/search in panel; better folding persistence; richer filters (by tag/status/duration).
+- Adaptive ergonomics
+  - Dynamic panel width (golden ratio option); auto-switch runner based on suite size/duration.
+- Packaging
+  - MELPA recipe; more examples for JSON emitters; improved Nix story and templates.
+- Documentation
+  - More “recipes” for common project setups; troubleshooting playbook with patterns.

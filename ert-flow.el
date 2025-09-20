@@ -1,5 +1,5 @@
 ;;; ert-flow.el --- Minimal ERT flow: run external tests, parse, show panel -*- lexical-binding: t; -*-
-;; Author: ert-flow bot
+;; Author: Peter Kosov <11111000000@email.com>
 ;; Version: 0.1.0
 ;; Package-Requires: ((emacs "27.1"))
 ;; Keywords: tools, lisp, testing
