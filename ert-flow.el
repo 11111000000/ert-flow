@@ -1159,6 +1159,21 @@ status, file/line, tags and backtraces."
     map)
   "Keymap for suite heading buttons that makes TAB fold/unfold instead of moving.")
 
+(defvar ert-flow--status-button-map
+  (let ((map (make-sparse-keymap)))
+    (set-keymap-parent map button-map)
+    ;; TAB toggles Status fold/unfold
+    (define-key map (kbd "TAB") #'ert-flow-toggle-status)
+    (define-key map [tab] #'ert-flow-toggle-status)
+    (define-key map (kbd "<tab>") #'ert-flow-toggle-status)
+    ;; Navigation passthrough
+    (define-key map (kbd "n") #'ert-flow-next-item)
+    (define-key map (kbd "p") #'ert-flow-previous-item)
+    (define-key map (kbd "j") #'ert-flow-next-item)
+    (define-key map (kbd "k") #'ert-flow-previous-item)
+    map)
+  "Keymap for Status heading (TAB folds/unfolds, mouse-1 toggles).")
+
 (defvar ert-flow--toolbar-button-map
   (let ((map (make-sparse-keymap())))
     (set-keymap-parent map button-map)
@@ -1494,20 +1509,75 @@ from test names for display only (the underlying result plist is unchanged)."
          (line (format "  %s %s\n" icon-prop (or display-nm nm))))
     (insert (ert-flow--propertize line r))))
 
+(defun ert-flow--suite-aggregate (results)
+  "Return aggregate status symbol for RESULTS: all-pass, all-fail, mixed, skipped-only, or empty."
+  (let* ((p (cl-count-if (lambda (r) (eq (plist-get r :status) 'pass)) results))
+         (f (cl-count-if (lambda (r) (eq (plist-get r :status) 'fail)) results))
+         (e (cl-count-if (lambda (r) (eq (plist-get r :status) 'error)) results))
+         (s (cl-count-if (lambda (r) (memq (plist-get r :status) '(skip xfail))) results)))
+    (cond
+     ((and (= p 0) (= f 0) (= e 0) (= s 0)) 'empty)
+     ((and (> p 0) (= f 0) (= e 0)) 'all-pass)
+     ((and (= p 0) (> (+ f e) 0)) 'all-fail)
+     ((and (= p 0) (= (+ f e) 0) (> s 0)) 'skipped-only)
+     (t 'mixed))))
+
+(defun ert-flow--suite-icon (agg)
+  "Return colored folder icon string for AGG aggregate status."
+  (let* ((color (pcase agg
+                  ('all-pass "SpringGreen3")
+                  ('all-fail "Red3")
+                  ('mixed "DarkOrange2")
+                  ('skipped-only "gray60")
+                  (_ "gray60")))
+         (face `(:foreground ,color))
+         (icon
+          (cond
+           ((and (featurep 'all-the-icons)
+                 (fboundp 'all-the-icons-material)
+                 (display-graphic-p))
+            (all-the-icons-material "folder" :v-adjust 0.0 :height 1.0 :face face))
+           ((char-displayable-p ?📁) "📁")
+           (t "[+]"))))
+    (if (stringp icon) (propertize icon 'face face) icon)))
+
 (defun ert-flow--insert-suite (suite results)
   "Insert a SUITE heading and its RESULTS, always showing suite header.
-Heading is clickable to toggle fold."
-  (let* ((folded (and (boundp 'ert-flow--folded-suites)
-                      ert-flow--folded-suites
-                      (gethash suite ert-flow--folded-suites)))
+Heading is clickable to toggle fold. Header includes a colored folder icon
+reflecting aggregate suite status:
+- green: all tests passed
+- yellow: mixed (some passed, some failed/errors)
+- red: all failed/errors
+- gray: only skipped/xfail or empty.
+
+Note: do not override icon color with a uniform button face."
+  (ert-flow--ensure-fold-table)
+  (let* ((agg (ert-flow--suite-aggregate results))
+         ;; Initialize default folding once per suite (only if key absent)
+         (present (let ((marker '#:no))
+                    (not (eq (gethash suite ert-flow--folded-suites marker) marker))))
+         (_init (unless present
+                  (when (eq agg 'all-pass)
+                    (puthash suite t ert-flow--folded-suites))))
+         (folded (gethash suite ert-flow--folded-suites))
          (arrow (if folded "▸" "▾"))
-         (hdr (format "%s %s\n" arrow suite)))
+         (icon (ert-flow--suite-icon agg))
+         (name suite)
+         (s (concat arrow " " icon " " name "\n"))
+         (arrow-len (length arrow))
+         (icon-len (length icon))
+         (name-start (+ arrow-len 1 icon-len 1))
+         (name-end (1- (length s))))
+    ;; Bold arrow and suite name; icon keeps its own colored face
+    (add-text-properties 0 arrow-len '(face bold) s)
+    (when (> name-end name-start)
+      (add-text-properties name-start name-end '(face bold) s))
     (insert-text-button
-     hdr
-     'face 'bold
+     s
+     ;; Do not set a uniform 'face here to preserve icon color
      'mouse-face 'highlight
      'follow-link t
-     'help-echo "Toggle fold (mouse-1, TAB)"
+     'help-echo "Toggle group (mouse-1, TAB)"
      'keymap ert-flow--suite-button-map
      'ert-flow--suite suite
      'action (lambda (_btn)
@@ -1556,9 +1626,63 @@ Heading is clickable to toggle fold."
    ((char-displayable-p ?📝) "📝")
    (t "[S]")))
 
+(defun ert-flow--panel-summary-icon ()
+  "Return an icon for the Summary header."
+  (cond
+   ((and (featurep 'all-the-icons)
+         (fboundp 'all-the-icons-material)
+         (display-graphic-p))
+    (all-the-icons-material "view_list" :v-adjust 0.02 :height 1.0
+                            :face '(:foreground "gray70")))
+   ((char-displayable-p ?≡) "≡")
+   (t "[Σ]")))
+
+(defun ert-flow--status-line-icon (key &optional state)
+  "Return icon for Status line KEY. Optional STATE for toggles like watch."
+  (let ((gui (and (featurep 'all-the-icons) (display-graphic-p))))
+    (cond
+     (gui
+      (pcase key
+        ('counters (all-the-icons-material "subject" :height 1.0 :v-adjust 0.02
+                                           :face '(:foreground "LightSkyBlue3")))
+        ('duration (all-the-icons-material "timer" :height 1.0 :v-adjust 0.02
+                                           :face '(:foreground "gray70")))
+        ('proc     (all-the-icons-material "autorenew" :height 1.0 :v-adjust 0.02
+                                           :face '(:foreground "MediumPurple3")))
+        ('project  (all-the-icons-material "folder_open" :height 1.0 :v-adjust 0.02
+                                           :face '(:foreground "SteelBlue3")))
+        ('runner   (if (fboundp 'all-the-icons-octicon)
+                       (all-the-icons-octicon "rocket" :height 1.0 :v-adjust 0.02
+                                              :face '(:foreground "Gold3"))
+                     (all-the-icons-material "rocket_launch" :height 1.0 :v-adjust 0.02
+                                             :face '(:foreground "Gold3"))))
+        ('mode     (all-the-icons-material "sync" :height 1.0 :v-adjust 0.02
+                                           :face '(:foreground "DarkOrange2")))
+        ('watch    (all-the-icons-material (if (eq state 'on) "visibility" "visibility_off")
+                                           :height 1.0 :v-adjust 0.02
+                                           :face (if (eq state 'on)
+                                                     '(:foreground "DeepSkyBlue3")
+                                                   '(:foreground "gray60"))))
+        ('parser   (all-the-icons-material "extension" :height 1.0 :v-adjust 0.02
+                                           :face '(:foreground "SlateGray3")))
+        (_ "")))
+     (t
+      (pcase key
+        ('counters (if (char-displayable-p ?📊) "📊" "Σ"))
+        ('duration (if (char-displayable-p ?⏱) "⏱" "T"))
+        ('proc     (if (char-displayable-p ?⚙) "⚙" "P"))
+        ('project  (if (char-displayable-p ?📁) "📁" "D"))
+        ('runner   (if (char-displayable-p ?🚀) "🚀" "R"))
+        ('mode     (if (char-displayable-p ?⟳) "⟳" "M"))
+        ('watch    (if (eq state 'on)
+                       (if (char-displayable-p ?👁) "👁" "W")
+                     (if (char-displayable-p ?🙈) "🙈" "w")))
+        ('parser   (if (char-displayable-p ?🧩) "🧩" "X"))
+        (_ ""))))))
+
 (defun ert-flow--status-counters-str (sum results)
   "Return colored counters string: \"N (P:x F:y E:z S:u U:w)\"."
-  (cl-destructuring-bind (&key total unexpected passed failed error skipped)
+  (cl-destructuring-bind (&key total unexpected passed failed error skipped &allow-other-keys)
       (apply #'ert-flow--summary-counters (list sum results))
     (let* ((u-face (if (> (or unexpected 0) 0) 'ert-flow-face-fail 'ert-flow-face-pass)))
       (concat
@@ -1583,7 +1707,8 @@ Heading is clickable to toggle fold."
                    (directory-file-name (ert-flow--session-root sess))))
          (runner-sym (ert-flow--conf sess 'runner ert-flow-runner))
          (runner (if (eq runner-sym 'in-emacs-ert) "in-emacs" "external"))
-         (watch (if (ert-flow--session-watch-enabled sess) "On" "Off"))
+         (watch-on (ert-flow--session-watch-enabled sess))
+         (watch (if watch-on "On" "Off"))
          (mode (ert-flow--conf sess 'watch-mode ert-flow-watch-mode))
          (parser-used (or (ert-flow--get-last-parser sess)
                           (ert-flow--conf sess 'parser ert-flow-parser)))
@@ -1591,31 +1716,53 @@ Heading is clickable to toggle fold."
          (active ert-flow--active-run-count)
          (queued (length ert-flow--run-queue))
          (dur-str (plist-get (apply #'ert-flow--summary-counters (list sum results)) :dur-str))
+         ;; Build heading without forcing a uniform face to keep icon color
          (head (concat arrow " "
-                       (propertize icon 'face '(:weight semi-bold))
-                       " Status"
+                       icon
+                       (propertize " Status" 'face 'bold)
                        (when folded
-                         (concat " " (ert-flow--status-counters-str sum results)))
+                         (concat " "
+                                 (ert-flow--status-counters-str sum results)))
                        "\n")))
     ;; Heading with toggle
     (insert-text-button
      head
-     'face 'bold
+     ;; Do not set 'face here to preserve icon coloring
      'mouse-face 'highlight
      'follow-link t
-     'help-echo "Fold/unfold Status (mouse-1)"
-     'action (lambda (_btn)
-               (setq ert-flow--panel-status-folded (not ert-flow--panel-status-folded))
-               (ert-flow--render)))
-    ;; Body when unfolded
+     'help-echo "Fold/unfold Status (mouse-1, TAB)"
+     'keymap ert-flow--status-button-map
+     'ert-flow--nav 'status
+     'action (lambda (_btn) (ert-flow-toggle-status)))
+    ;; Body when unfolded (each line with its own icon)
     (unless folded
-      (insert (propertize (ert-flow--status-counters-str sum results) 'face '(:weight bold)))
-      (insert "\n")
-      (insert (format "duration: %s\n" (or dur-str "-")))
-      (insert (format "Proc: active %d, queued %d\n" active queued))
-      (insert (format "Project: %s\nRunner: %s\nMode: %s\nWatch: %s\nParser: %s\n"
-                      project runner mode watch parser-str)))
+      (let ((mk (lambda (icon-str body)
+                  (insert (propertize (format "%s %s" icon-str body)
+                                      'ert-flow--nav 'status-item))
+                  (insert "\n"))))
+        (funcall mk (ert-flow--status-line-icon 'counters)
+                 (propertize (ert-flow--status-counters-str sum results) 'face '(:weight bold)))
+        (funcall mk (ert-flow--status-line-icon 'duration)
+                 (format "duration: %s" (or dur-str "-")))
+        (funcall mk (ert-flow--status-line-icon 'proc)
+                 (format "Proc: active %d, queued %d" active queued))
+        (funcall mk (ert-flow--status-line-icon 'project)
+                 (format "Project: %s" project))
+        (funcall mk (ert-flow--status-line-icon 'runner)
+                 (format "Runner: %s" runner))
+        (funcall mk (ert-flow--status-line-icon 'mode)
+                 (format "Mode: %s" mode))
+        (funcall mk (ert-flow--status-line-icon 'watch (if watch-on 'on 'off))
+                 (format "Watch: %s" watch))
+        (funcall mk (ert-flow--status-line-icon 'parser)
+                 (format "Parser: %s" parser-str))))
     (insert "\n")))
+
+(defun ert-flow-toggle-status ()
+  "Toggle folding of the Status block and re-render."
+  (interactive)
+  (setq ert-flow--panel-status-folded (not ert-flow--panel-status-folded))
+  (ert-flow--render))
 
 (defun ert-flow--render-insert (ctx)
   "Insert Status block and grouped suites using CTX."
@@ -1624,8 +1771,7 @@ Heading is clickable to toggle fold."
          (results (plist-get ctx :results)))
     ;; Header-line is used for controls; buffer body starts with Status block.
     (ert-flow--insert-status-block sess sum results)
-    ;; Optional visual header before suites
-    (insert (propertize "▾ Summary\n" 'face 'bold))
+    ;; Directly list groups (Summary header removed as redundant)
     (dolist (pair (ert-flow--group-results (ert-flow--apply-panel-filters results)))
       (ert-flow--insert-suite (car pair) (cdr pair)))))
 
@@ -1672,12 +1818,13 @@ Returns plist: (:sess :sum :results :proc) and emits diagnostic logs."
     (list :sess sess :sum sum :results results :proc proc)))
 
 (defun ert-flow--render-insert (ctx)
-  "Insert header, summary, and grouped results using CTX."
+  "Insert Status block and grouped suites using CTX."
   (let* ((sess (plist-get ctx :sess))
          (sum (plist-get ctx :sum))
          (results (plist-get ctx :results)))
-    (ert-flow--insert-header-line sess)
-    (ert-flow--insert-summary-line sum results)
+    ;; Header-line hosts controls; buffer body starts with Status block.
+    (ert-flow--insert-status-block sess sum results)
+    ;; Directly list groups (Summary header removed as redundant)
     (dolist (pair (ert-flow--group-results (ert-flow--apply-panel-filters results)))
       (ert-flow--insert-suite (car pair) (cdr pair)))))
 
@@ -1760,7 +1907,7 @@ Returns plist: (:sess :sum :results :proc) and emits diagnostic logs."
 ;;; Navigation
 
 (defun ert-flow--goto-next-item (dir)
-  "Move point to next (DIR>0) or previous (DIR<0) item (test or suite)."
+  "Move point to next (DIR>0) or previous (DIR<0) item (test, suite, status/summary)."
   (let ((step (if (> dir 0) 1 -1))
         (start (point))
         (done nil))
@@ -1768,8 +1915,9 @@ Returns plist: (:sess :sum :results :proc) and emits diagnostic logs."
       (while (if (> dir 0) (not (eobp)) (not (bobp)))
         (forward-line step)
         (let ((is-test (get-text-property (line-beginning-position) 'ert-flow--result))
-              (is-suite (get-text-property (line-beginning-position) 'ert-flow--suite)))
-          (when (or is-test is-suite)
+              (is-suite (get-text-property (line-beginning-position) 'ert-flow--suite))
+              (nav     (get-text-property (line-beginning-position) 'ert-flow--nav)))
+          (when (or nav is-test is-suite)
             (beginning-of-line)
             (setq done t)
             (throw 'jump t)))))
