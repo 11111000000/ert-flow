@@ -7,10 +7,6 @@
 
 Software is a conversation between what we intended and what actually runs. Tests translate between these two, but the loop “edit → run → read → fix → repeat” too often leaks our attention in tiny drips.
 Ert-Flow exists to keep the loop flowing. It watches your project, runs tests when it makes sense (not when you sneeze), parses whatever your runner emits, and shows a crisp, actionable panel near your code.
-Goals:
-  - Be invisible when all is well; be obvious and helpful when it isn’t.
-  - Scale from tiny packages to larger suites by mixing in-Emacs speed with external-process robustness.
-  - Offer humane ergonomics: a stable right-side panel, a readable header-line, clickable controls, and copy-pasteable failure reports.
 
 * Features at a glance
 - Right-side results panel grouped by suite; foldable sections with status icons.
@@ -25,6 +21,9 @@ Goals:
 - Multi-session aware: one panel per project; session list and dashboard across projects.
 - Unicode by default; optional all-the-icons for richer glyphs (with graceful degradation).
 - Defensive by design: parsers are tolerant, errors logged optionally, UI stays up.
+- Be invisible when all is well; be obvious and helpful when it isn’t.
+- Scale from tiny packages to larger suites by mixing in-Emacs speed with external-process robustness.
+- Offer humane ergonomics: a stable right-side panel, a readable header-line, clickable controls, and copy-pasteable failure reports.
 
 * Installation
 ** Requirements
