@@ -1108,7 +1108,7 @@ status, file/line, tags and backtraces."
     (define-key map (kbd "x") #'ert-flow-clear)
     (define-key map (kbd "o") #'ert-flow-goto-definition-at-point)
     (define-key map (kbd "RET") #'ert-flow-open-details-at-point)
-    (define-key map (kbd "TAB") #'ert-flow-toggle-group-at-point)
+    (define-key map (kbd "TAB") #'ert-flow-tab)
     (define-key map (kbd "<backtab>") #'ert-flow-toggle-all-groups)
     ;; Navigation
     (define-key map (kbd "n") #'ert-flow-next-item)
@@ -1574,7 +1574,7 @@ Note: do not override icon color with a uniform button face."
       (add-text-properties name-start name-end '(face bold) s))
     (insert-text-button
      s
-     ;; Do not set a uniform 'face here to preserve icon color
+     'face '(:underline nil)  ;; remove underline, do not override icon color
      'mouse-face 'highlight
      'follow-link t
      'help-echo "Toggle group (mouse-1, TAB)"
@@ -1716,24 +1716,34 @@ Note: do not override icon color with a uniform button face."
          (active ert-flow--active-run-count)
          (queued (length ert-flow--run-queue))
          (dur-str (plist-get (apply #'ert-flow--summary-counters (list sum results)) :dur-str))
-         ;; Build heading without forcing a uniform face to keep icon color
-         (head (concat arrow " "
-                       icon
-                       (propertize " Status" 'face 'bold)
-                       (when folded
-                         (concat " "
-                                 (ert-flow--status-counters-str sum results)))
-                       "\n")))
+         ;; Compose heading: avoid adding (propertize ...) to the *whole* string, only apply :weight bold to word "Status"
+         (arrow-len (length arrow))
+         (icon-len (length icon))
+         (status-word " Status")
+         (label (concat arrow " " icon status-word))
+         (label-str
+          (copy-sequence
+           (concat label
+                   (when folded
+                     (concat " "
+                             (ert-flow--status-counters-str sum results)))
+                   "\n")))
+         (status-pos (string-match "Status" label-str)))
+    ;; Make only "Status" bold, not the whole string (to avoid underline/other theme effects)
+    (when status-pos
+      (add-text-properties status-pos (+ status-pos (length "Status"))
+                           '(face (:weight bold)) label-str))
     ;; Heading with toggle
     (insert-text-button
-     head
-     ;; Do not set 'face here to preserve icon coloring
+     label-str
+     'face '(:underline nil)  ;; remove underline, keep icon color (no foreground here)
      'mouse-face 'highlight
      'follow-link t
      'help-echo "Fold/unfold Status (mouse-1, TAB)"
      'keymap ert-flow--status-button-map
      'ert-flow--nav 'status
-     'action (lambda (_btn) (ert-flow-toggle-status)))
+     'action (lambda (_btn)
+               (ert-flow-toggle-status)))
     ;; Body when unfolded (each line with its own icon)
     (unless folded
       (let ((mk (lambda (icon-str body)
@@ -1927,6 +1937,16 @@ Returns plist: (:sess :sum :results :proc) and emits diagnostic logs."
 
 (defun ert-flow-next-item () (interactive) (ert-flow--goto-next-item 1))
 (defun ert-flow-previous-item () (interactive) (ert-flow--goto-next-item -1))
+
+(defun ert-flow-tab ()
+  "Context-aware TAB: toggle Status at Status header, otherwise toggle suite."
+  (interactive)
+  (let* ((nav (get-text-property (line-beginning-position) 'ert-flow--nav))
+         (suite (get-text-property (line-beginning-position) 'ert-flow--suite)))
+    (cond
+     ((eq nav 'status) (ert-flow-toggle-status))
+     (suite (ert-flow-toggle-group-at-point))
+     (t (ert-flow-toggle-group-at-point)))))
 
 ;;;###autoload
 (defun ert-flow-goto-definition-at-point ()
