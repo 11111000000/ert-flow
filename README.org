@@ -5,7 +5,7 @@ Ert-Flow exists to keep the loop flowing. It watches your project, runs tests wh
 
 #+caption: Ert-Flow in action
 #+attr_org: :width 900
-[[./screenshot-ert-flow.png]]
+[[./ert-flow.png]]
 
 * Features at a glance
 - Right-side results panel grouped by suite; foldable sections with status icons.
