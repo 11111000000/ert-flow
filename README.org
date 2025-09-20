@@ -5,13 +5,12 @@
 #+attr_org: :width 500
 [[./screenshot-ert-flow.png]]
 
-- Software is a conversation between what we intended and what actually runs. Tests translate between these two, but the loop “edit → run → read → fix → repeat” too often leaks our attention in tiny drips.
-- ert-flow exists to keep the loop flowing. It watches your project, runs tests when it makes sense (not when you sneeze), parses whatever your runner emits, and shows a crisp, actionable panel near your code.
-- Goals:
+Software is a conversation between what we intended and what actually runs. Tests translate between these two, but the loop “edit → run → read → fix → repeat” too often leaks our attention in tiny drips.
+Ert-Flow exists to keep the loop flowing. It watches your project, runs tests when it makes sense (not when you sneeze), parses whatever your runner emits, and shows a crisp, actionable panel near your code.
+Goals:
   - Be invisible when all is well; be obvious and helpful when it isn’t.
   - Scale from tiny packages to larger suites by mixing in-Emacs speed with external-process robustness.
   - Offer humane ergonomics: a stable right-side panel, a readable header-line, clickable controls, and copy-pasteable failure reports.
-- Emacs Lisp humor, promised: ert-flow will not fix your tests, your sleep schedule, or your CI bill. It does, however, push buttons for you — which is, frankly, most of modern engineering.
 
 * Features at a glance
 - Right-side results panel grouped by suite; foldable sections with status icons.
