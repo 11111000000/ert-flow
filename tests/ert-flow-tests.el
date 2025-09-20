@@ -151,5 +151,197 @@
         (ert-flow--render)
         (should (string-match-p "Runner:" (buffer-string)))))))
 
+(ert-deftest ert-flow/render-header-shows-parser ()
+  "Header shows Parser: <mode> (auto/json/ert-batch/in-emacs)."
+  (let* ((root (ert-flow--project-root))
+         (bufname (ert-flow--session-panel-name root)))
+    (with-current-buffer (get-buffer-create bufname)
+      (let ((ert-flow--panel-buffer-name bufname))
+        (ert-flow--render)
+        (should (string-match-p "Parser:" (buffer-string)))))))
+
+(ert-deftest ert-flow/panel-tags-filter ()
+  "Tags filter narrows results."
+  (let* ((root (ert-flow--project-root))
+         (sess (ert-flow--get-session root))
+         (bufname (ert-flow--session-panel-name root)))
+    (setf (ert-flow--session-last-summary sess) '((total . 3)))
+    (setf (ert-flow--session-last-results sess)
+          (list (list :name "ns/ok" :status 'pass :suite "ns" :tags '("fast" "unit"))
+                (list :name "ns/slow" :status 'pass :suite "ns" :tags '("slow"))
+                (list :name "ns/none" :status 'pass :suite "ns")))
+
+    (with-current-buffer (get-buffer-create bufname)
+      (let ((ert-flow--panel-buffer-name bufname))
+        (ert-flow-panel-mode)
+        (setq-local ert-flow--panel-tags-filter '("fast"))
+        (ert-flow--render)
+        (let ((s (buffer-string)))
+          (should (string-match-p "ns/ok" s))
+          (should-not (string-match-p "ns/slow" s))
+          (should-not (string-match-p "ns/none" s)))))))
+
+(ert-deftest ert-flow/parse-batch-xfail-xpass ()
+  "Batch parser recognizes XFAIL as xfail and XPASS as fail."
+  (let* ((out (mapconcat
+               #'identity
+               '("Running 3 tests"
+                 "Test ns/ok passed."
+                 "Ran 3 tests, 1 results were unexpected."
+                 "XFAIL ns/xf"
+                 "XPASS ns/xp"
+                 "")
+               "\n"))
+         (parsed (ert-flow--parse-batch-output out))
+         (results (cdr parsed)))
+    (let ((r-xf (seq-find (lambda (r) (equal (plist-get r :name) "ns/xf")) results))
+          (r-xp (seq-find (lambda (r) (equal (plist-get r :name) "ns/xp")) results)))
+      (should (eq (plist-get r-xf :status) 'xfail))
+      (should (eq (plist-get r-xp :status) 'fail)))))
+
+(ert-deftest ert-flow/copy-includes-stdout-stderr ()
+  "Copy failures includes optional STDOUT/STDERR tails when enabled."
+  (let* ((root (ert-flow--project-root))
+         (sess (ert-flow--get-session root))
+         (ert-flow-copy-include-stdout t)
+         (ert-flow-copy-include-stderr t)
+         (ert-flow-copy-backtrace-limit 64))
+    (setf (ert-flow--session-last-results sess)
+          (list (list :name "ns/f1" :status 'fail :message "boom" :details "D1\nD2")))
+    (setf (ert-flow--session-last-raw-output sess) "stdout-aaa\nbbb\nccc")
+    (setf (ert-flow--session-last-stderr-output sess) "stderr-xxx\nyyy\nzzz")
+    (let ((kill-ring nil))
+      (ert-flow-copy-failures)
+      (let ((s (current-kill 0 t)))
+        (should (string-match-p "STDOUT tail" s))
+        (should (string-match-p "STDERR tail" s))
+        (should (string-match-p "=== ns/f1 ===" s))))))
+
+(ert-deftest ert-flow/dashboard-smoke ()
+  "Dashboard opens and shows headline."
+  (ert-flow-dashboard)
+  (let ((buf (get-buffer "*ert-flow: dashboard*")))
+    (should buf)
+    (with-current-buffer buf
+      (should (string-match-p "dashboard" (buffer-string))))))
+
+(ert-deftest ert-flow/parse-batch-progress-lines ()
+  "Parser recognizes progress-style lines like 'passed 1/2 NAME'."
+  (let* ((out (mapconcat
+               #'identity
+               '("Running 2 tests"
+                 "passed 1/2 ns/ok"
+                 "passed 2/2 ns/ok2"
+                 "Ran 2 tests, 0 results were unexpected."
+                 "")
+               "\n"))
+         (parsed (ert-flow--parse-batch-output out))
+         (summary (car parsed))
+         (results (cdr parsed)))
+    (should (= (alist-get 'total summary) 2))
+    (should (= (length results) 2))
+    (dolist (nm '("ns/ok" "ns/ok2"))
+      (let ((r (seq-find (lambda (x) (equal (plist-get x :name) nm)) results)))
+        (should r)
+        (should (eq (plist-get r :status) 'pass))))))
+
+(ert-deftest ert-flow/choose-output-fallback-stderr ()
+  "When stdout is empty and stderr has batch output, use stderr for parsing."
+  (let* ((stderr (ert-flow-tests--sample-batch))
+         (raw (ert-flow--choose-output-for-parse nil stderr))
+         (parsed (ert-flow--parse-output raw))
+         (summary (car parsed))
+         (results (cdr parsed)))
+    (should (= (alist-get 'total summary) 2))
+    (should (>= (length results) 1))
+    (let ((r (seq-find (lambda (x) (equal (plist-get x :name) "ns/ok")) results)))
+      (should r)
+      (should (eq (plist-get r :status) 'pass)))))
+
+(ert-deftest ert-flow/panel-filters-reduce-results ()
+  "Panel filters (status/name) reduce visible tests as expected."
+  (let* ((root (ert-flow--project-root))
+         (sess (ert-flow--get-session root))
+         (bufname (ert-flow--session-panel-name root)))
+    ;; Seed results: one pass, one fail
+    (setf (ert-flow--session-last-summary sess) '((total . 2) (unexpected . 1)))
+    (setf (ert-flow--session-last-results sess)
+          (list (list :name "ns/ok" :status 'pass :suite "ns")
+                (list :name "ns/f1" :status 'fail :suite "ns")))
+    (with-current-buffer (get-buffer-create bufname)
+      (let ((ert-flow--panel-buffer-name bufname))
+        (ert-flow-panel-mode)
+        ;; Show all
+        (ert-flow--render)
+        (let ((s (buffer-string)))
+          (should (string-match-p "ns/ok" s))
+          (should (string-match-p "ns/f1" s)))
+        ;; Filter to pass only
+        (setq-local ert-flow--panel-status-filter '(pass))
+        (ert-flow--render)
+        (let ((s (buffer-string)))
+          (should (string-match-p "ns/ok" s))
+          (should-not (string-match-p "ns/f1" s)))
+        ;; Name filter to ns/ok2 (no matches)
+        (setq-local ert-flow--panel-name-regexp "ns/ok2")
+        (ert-flow--render)
+        (let ((s (buffer-string)))
+          (should-not (string-match-p "ns/ok" s))
+          (should-not (string-match-p "ns/f1" s)))))))
+
+(ert-deftest ert-flow/toggle-logging ()
+  "Toggle logging command flips the flag."
+  (let ((ert-flow-log-enabled nil))
+    (ert-flow-toggle-logging)
+    (should ert-flow-log-enabled)
+    (ert-flow-toggle-logging)
+    (should-not ert-flow-log-enabled)))
+
+(ert-deftest ert-flow/multi-session-isolation ()
+  "Results of different sessions do not mix in their panels."
+  (let* ((root-a (make-temp-file "ert-flow-a" t))
+         (root-b (make-temp-file "ert-flow-b" t))
+         (sess-a (ert-flow--get-session root-a))
+         (sess-b (ert-flow--get-session root-b))
+         (buf-a (ert-flow--session-panel-name root-a))
+         (buf-b (ert-flow--session-panel-name root-b)))
+    (unwind-protect
+        (progn
+          ;; Seed different results for A and B
+          (setf (ert-flow--session-last-summary sess-a) '((total . 1)))
+          (setf (ert-flow--session-last-results sess-a)
+                (list (list :name "ns/ok-a" :status 'pass :suite "ns")))
+          (setf (ert-flow--session-last-summary sess-b) '((total . 1)))
+          (setf (ert-flow--session-last-results sess-b)
+                (list (list :name "ns/ok-b" :status 'pass :suite "ns")))
+          ;; Render A
+          (with-current-buffer (get-buffer-create buf-a)
+            (let ((ert-flow--panel-buffer-name buf-a))
+              (ert-flow--render)
+              (let ((s (buffer-string)))
+                (should (string-match-p "ns/ok-a" s))
+                (should-not (string-match-p "ns/ok-b" s)))))
+          ;; Render B
+          (with-current-buffer (get-buffer-create buf-b)
+            (let ((ert-flow--panel-buffer-name buf-b))
+              (ert-flow--render)
+              (let ((s (buffer-string)))
+                (should (string-match-p "ns/ok-b" s))
+                (should-not (string-match-p "ns/ok-a" s))))))
+      ;; Cleanup temp dirs
+      (ignore-errors (delete-directory root-a t))
+      (ignore-errors (delete-directory root-b t)))))
+
+(ert-deftest ert-flow/find-panel-session-by-name ()
+  "ert-flow--find-panel-session resolves the correct session by panel buffer name."
+  (let* ((root (make-temp-file "ert-flow-root" t))
+         (sess (ert-flow--get-session root))
+         (bufname (ert-flow--session-panel-name root)))
+    (unwind-protect
+        (with-current-buffer (get-buffer-create bufname)
+          (let ((ert-flow--panel-buffer-name bufname))
+            (should (eq (ert-flow--find-panel-session) sess))))
+      (ignore-errors (delete-directory root t)))))
+
 (provide 'ert-flow-tests)
 ;;; ert-flow-tests.el ends here
