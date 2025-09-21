@@ -22,6 +22,7 @@
 ;;; Code:
 
 (require 'cl-lib)
+(require 'gv)
 (require 'ert)
 (require 'seq)
 (require 'project)
@@ -378,6 +379,8 @@ Signature: (fn root-string) → name-string."
   "Return icon string for STATUS, using Material icons if available."
   (let ((icons-ok (and (memq ert-flow-toolbar-style '(auto icons))
                        (featurep 'all-the-icons)
+                       (display-graphic-p)
+                       (find-font (font-spec :family "Material Icons"))
                        (fboundp 'all-the-icons-material))))
     (if icons-ok
         (pcase status
@@ -824,8 +827,8 @@ Defensive parsing: accepts vectors or lists for arrays, tolerates missing keys."
     (when (process-live-p (ert-flow--session-process sess))
       (ert-flow--log "Killing previous process...")
       (ignore-errors (kill-process (ert-flow--session-process sess))))
-    (setf (ert-flow--session-last-raw-output sess) nil
-          (ert-flow--session-last-stderr-output sess) nil)
+    (ert-flow--set-last-raw-output sess nil)
+    (ert-flow--set-last-stderr-output sess nil)
     (ert-flow-open-panel)
     (with-current-buffer (get-buffer-create panel)
       (let ((inhibit-read-only t))
@@ -848,7 +851,7 @@ Defensive parsing: accepts vectors or lists for arrays, tolerates missing keys."
         (process-put p 'ert-flow-label label)
         (process-put p 'ert-flow-root root)
         (process-put p 'ert-flow-cmd cmd)
-        (setf (ert-flow--session-process sess) p)
+        (ert-flow--set-process sess p)
         ;; legacy global for compatibility
         (setq ert-flow--process p)
         (ert-flow--log-concurrency-state)))))
@@ -1094,9 +1097,9 @@ status, file/line, tags and backtraces."
              (summary (car pair))
              (results (cdr pair)))
         ;; Store into session and legacy globals
-        (setf (ert-flow--session-last-summary sess) summary
-              (ert-flow--session-last-results sess) results
-              (ert-flow--session-last-raw-output sess) nil)
+        (ert-flow--set-last-summary sess summary)
+        (ert-flow--set-last-results sess results)
+        (ert-flow--set-last-raw-output sess nil)
         (setq ert-flow--last-summary summary
               ert-flow--last-results results
               ert-flow--last-raw-output nil)
@@ -1544,7 +1547,8 @@ from test names for display only (the underlying result plist is unchanged)."
           (cond
            ((and (featurep 'all-the-icons)
                  (fboundp 'all-the-icons-material)
-                 (display-graphic-p))
+                 (display-graphic-p)
+                 (find-font (font-spec :family "Material Icons")))
             (all-the-icons-material "folder" :v-adjust 0.0 :height 1.0 :face face))
            ((char-displayable-p ?📁) "📁")
            (t "[+]"))))
@@ -1618,9 +1622,9 @@ Note: do not override icon color with a uniform button face."
 (defun ert-flow--render-context ()
   "Collect render context for current panel buffer."
   (let* ((sess (ert-flow--find-panel-session))
-         (sum (and sess (ert-flow--session-last-summary sess)))
-         (results (and sess (ert-flow--session-last-results sess)))
-         (proc (and sess (ert-flow--session-process sess))))
+         (sum (and sess (ert-flow--get-last-summary sess)))
+         (results (and sess (ert-flow--get-last-results sess)))
+         (proc (and sess (ert-flow--get-process sess))))
     (list :sess sess :sum sum :results results :proc proc)))
 
 ;; Collapsible Status block (panel header area in buffer)
@@ -1628,12 +1632,17 @@ Note: do not override icon color with a uniform button face."
   "If non-nil, the status block is folded in this panel buffer.")
 
 (defun ert-flow--panel-status-icon ()
-  "Return an icon for the Status block (all-the-icons if available, else text)."
+  "Return an icon for the Status block (all-the-icons if available, else text).
+
+Preserve the icon's font family from all-the-icons so the glyph renders
+with the correct font; only add our foreground color on top."
   (cond
    ((and (featurep 'all-the-icons)
          (fboundp 'all-the-icons-material)
-         (display-graphic-p))
-    (all-the-icons-material "assignment_turned_in" :v-adjust 0.02 :height 1.0
+         (display-graphic-p)
+         (find-font (font-spec :family "Material Icons")))
+    ;; Ask all-the-icons to apply the foreground; this keeps the Material Icons family.
+    (all-the-icons-material "assignment" :v-adjust 0.02 :height 1.0
                             :face '(:foreground "#b3cfff")))
    ((char-displayable-p ?📝) "📝")
    (t "[S]")))
@@ -1643,7 +1652,8 @@ Note: do not override icon color with a uniform button face."
   (cond
    ((and (featurep 'all-the-icons)
          (fboundp 'all-the-icons-material)
-         (display-graphic-p))
+         (display-graphic-p)
+         (find-font (font-spec :family "Material Icons")))
     (all-the-icons-material "view_list" :v-adjust 0.02 :height 1.0
                             :face '(:foreground "gray70")))
    ((char-displayable-p ?≡) "≡")
@@ -1651,7 +1661,9 @@ Note: do not override icon color with a uniform button face."
 
 (defun ert-flow--status-line-icon (key &optional state)
   "Return icon for Status line KEY. Optional STATE for toggles like watch."
-  (let ((gui (and (featurep 'all-the-icons) (display-graphic-p))))
+  (let ((gui (and (featurep 'all-the-icons)
+                  (display-graphic-p)
+                  (find-font (font-spec :family "Material Icons")))))
     (cond
      (gui
       (pcase key
@@ -1813,9 +1825,9 @@ Note: do not override icon color with a uniform button face."
   "Collect session context for rendering.
 Returns plist: (:sess :sum :results :proc) and emits diagnostic logs."
   (let* ((sess (ert-flow--find-panel-session))
-         (sum (and sess (ert-flow--session-last-summary sess)))
-         (results (and sess (ert-flow--session-last-results sess)))
-         (proc (and sess (ert-flow--session-process sess))))
+         (sum (and sess (ert-flow--get-last-summary sess)))
+         (results (and sess (ert-flow--get-last-results sess)))
+         (proc (and sess (ert-flow--get-process sess))))
     (ert-flow--log "render: panel=%s sess=%s results=%s total=%s filters: status=%S name=%S tags=%S"
                    ert-flow--panel-buffer-name
                    (and sess (ert-flow--dbg-sess sess))
@@ -2067,14 +2079,14 @@ For 'in-emacs-ert runner:
   "Accumulate CHUNK from the running process, session-aware."
   (condition-case err
       (let* ((sess (process-get proc 'ert-flow-session))
-             (old (and sess (ert-flow--session-last-raw-output sess)))
+             (old (and sess (ert-flow--get-last-raw-output sess)))
              (combined (concat (or old "") chunk)))
         ;; Trim per configured cap to save memory
         (when (and (integerp ert-flow-max-raw-output-bytes)
                    (> (length combined) ert-flow-max-raw-output-bytes))
           (setq combined (substring combined (- (length combined) ert-flow-max-raw-output-bytes))))
         (when sess
-          (setf (ert-flow--session-last-raw-output sess) combined))
+          (ert-flow--set-last-raw-output sess combined))
         ;; Legacy global mirrors current session
         (setq ert-flow--last-raw-output combined))
     (error
@@ -2095,7 +2107,7 @@ For 'in-emacs-ert runner:
   "Return plist with session and streams for PROC: (:sess :root :stdout :stderr :stderr-buf)."
   (let* ((sess (process-get proc 'ert-flow-session))
          (root (and sess (ert-flow--session-root sess)))
-         (stdout (or (and sess (ert-flow--session-last-raw-output sess))
+         (stdout (or (and sess (ert-flow--get-last-raw-output sess))
                      ert-flow--last-raw-output))
          (stderr-buf (process-get proc 'ert-flow-stderr-buf))
          (stderr-str (when (buffer-live-p stderr-buf)
@@ -2132,11 +2144,11 @@ For 'in-emacs-ert runner:
                (integerp ert-flow-max-raw-output-bytes)
                (> (length stderr-str) ert-flow-max-raw-output-bytes))
       (setq stderr-str (substring stderr-str (- (length stderr-str) ert-flow-max-raw-output-bytes))))
-    (setf (ert-flow--session-last-stderr-output sess) stderr-str)
+    (ert-flow--set-last-stderr-output sess stderr-str)
     (ert-flow--touch-session sess)
-    (setf (ert-flow--session-last-summary sess) summary
-          (ert-flow--session-last-results sess) results
-          (ert-flow--session-process sess) nil)
+    (ert-flow--set-last-summary sess summary)
+    (ert-flow--set-last-results sess results)
+    (ert-flow--set-process sess nil)
     (ert-flow--set-last-parser sess used)
     (ert-flow--log "store: root=%s parser=%s results=%d total=%s stderr-len=%s"
                    (ert-flow--session-root sess) used (length results)
@@ -2305,6 +2317,36 @@ If multiple candidates are available, prompt to choose."
   last-parser
   last-activity-at)
 
+;; Compatibility setters: some environments report void-function for (setf ert-flow--session-*)
+;; despite cl-defstruct normally providing a setf-expander. Provide gv setters that operate
+;; on the cl-struct vector layout so (setf (ert-flow--session-...) ...) keeps working.
+(defun ert-flow--session--vector-p (sess)
+  (and (vectorp sess)
+       (> (length sess) 0)
+       (eq (aref sess 0) 'cl-struct-ert-flow--session)))
+
+(defsubst ert-flow--session--aset (sess idx val)
+  (when (ert-flow--session--vector-p sess)
+    (aset sess idx val))
+  val)
+
+(gv-define-setter ert-flow--session-last-raw-output (val sess)
+  `(ert-flow--session--aset ,sess 4 ,val))
+(gv-define-setter ert-flow--session-last-stderr-output (val sess)
+  `(ert-flow--session--aset ,sess 5 ,val))
+(gv-define-setter ert-flow--session-last-results (val sess)
+  `(ert-flow--session--aset ,sess 6 ,val))
+(gv-define-setter ert-flow--session-last-summary (val sess)
+  `(ert-flow--session--aset ,sess 7 ,val))
+(gv-define-setter ert-flow--session-process (val sess)
+  `(ert-flow--session--aset ,sess 8 ,val))
+(gv-define-setter ert-flow--session-debounce-timer (val sess)
+  `(ert-flow--session--aset ,sess 9 ,val))
+(gv-define-setter ert-flow--session-watch-enabled (val sess)
+  `(ert-flow--session--aset ,sess 10 ,val))
+(gv-define-setter ert-flow--session-file-notify-handles (val sess)
+  `(ert-flow--session--aset ,sess 11 ,val))
+
 ;; Per-session configuration
 
 (defun ert-flow--dir-locals-snapshot (root symbols)
@@ -2396,6 +2438,73 @@ If the slot is missing (older struct instances), stores VALUE in session config.
   (condition-case nil
       (setf (ert-flow--session-last-activity-at sess) value)
     (error (ert-flow--set-conf sess 'last-activity-at value)))
+  value)
+
+;; Safe session getters/setters for volatile fields: summary/results/stdout/stderr/process.
+;; They write through to struct slots when possible and always mirror into session config.
+(defun ert-flow--get-last-summary (sess)
+  (or (condition-case nil
+          (ert-flow--session-last-summary sess)
+        (error nil))
+      (ert-flow--conf sess 'last-summary nil)))
+
+(defun ert-flow--set-last-summary (sess value)
+  (condition-case nil
+      (setf (ert-flow--session-last-summary sess) value)
+    (error nil))
+  (ert-flow--set-conf sess 'last-summary value)
+  value)
+
+(defun ert-flow--get-last-results (sess)
+  (or (condition-case nil
+          (ert-flow--session-last-results sess)
+        (error nil))
+      (ert-flow--conf sess 'last-results nil)))
+
+(defun ert-flow--set-last-results (sess value)
+  (condition-case nil
+      (setf (ert-flow--session-last-results sess) value)
+    (error nil))
+  (ert-flow--set-conf sess 'last-results value)
+  value)
+
+(defun ert-flow--get-last-raw-output (sess)
+  (or (condition-case nil
+          (ert-flow--session-last-raw-output sess)
+        (error nil))
+      (ert-flow--conf sess 'last-raw-output nil)))
+
+(defun ert-flow--set-last-raw-output (sess value)
+  (condition-case nil
+      (setf (ert-flow--session-last-raw-output sess) value)
+    (error nil))
+  (ert-flow--set-conf sess 'last-raw-output value)
+  value)
+
+(defun ert-flow--get-last-stderr-output (sess)
+  (or (condition-case nil
+          (ert-flow--session-last-stderr-output sess)
+        (error nil))
+      (ert-flow--conf sess 'last-stderr-output nil)))
+
+(defun ert-flow--set-last-stderr-output (sess value)
+  (condition-case nil
+      (setf (ert-flow--session-last-stderr-output sess) value)
+    (error nil))
+  (ert-flow--set-conf sess 'last-stderr-output value)
+  value)
+
+(defun ert-flow--get-process (sess)
+  (or (condition-case nil
+          (ert-flow--session-process sess)
+        (error nil))
+      (ert-flow--conf sess 'process nil)))
+
+(defun ert-flow--set-process (sess value)
+  (condition-case nil
+      (setf (ert-flow--session-process sess) value)
+    (error nil))
+  (ert-flow--set-conf sess 'process value)
   value)
 
 (defvar-local ert-flow--folded-suites nil
@@ -2926,9 +3035,9 @@ CMD and DURATION may be empty strings; they are omitted if empty."
   "Collect context for building the copy string. Return plist."
   (let* ((root (ert-flow--project-root))
          (sess (ert-flow--get-session root))
-         (results (or (and sess (ert-flow--session-last-results sess)) ert-flow--last-results))
-         (sum (or (and sess (ert-flow--session-last-summary sess)) ert-flow--last-summary))
-         (raw (or (and sess (ert-flow--session-last-raw-output sess)) ert-flow--last-raw-output))
+         (results (or (and sess (ert-flow--get-last-results sess)) ert-flow--last-results))
+         (sum (or (and sess (ert-flow--get-last-summary sess)) ert-flow--last-summary))
+         (raw (or (and sess (ert-flow--get-last-raw-output sess)) ert-flow--last-raw-output))
          (fails (seq-filter (lambda (r) (memq (plist-get r :status) '(fail error))) (or results '())))
          (ts (format-time-string "%Y-%m-%d %H:%M:%S"))
          (proj (file-name-nondirectory (directory-file-name root)))
@@ -2991,9 +3100,9 @@ Respects:
   (interactive)
   (let* ((sess (ert-flow--get-session (ert-flow--project-root))))
     (when sess
-      (setf (ert-flow--session-last-summary sess) nil
-            (ert-flow--session-last-results sess) nil
-            (ert-flow--session-last-raw-output sess) nil)))
+      (ert-flow--set-last-summary sess nil)
+      (ert-flow--set-last-results sess nil)
+      (ert-flow--set-last-raw-output sess nil)))
   ;; keep legacy globals in sync
   (setq ert-flow--last-summary nil
         ert-flow--last-results nil
