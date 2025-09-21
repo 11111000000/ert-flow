@@ -1584,7 +1584,7 @@ Note: do not override icon color with a uniform button face."
     (insert-text-button
      s
      'face '(:underline nil)  ;; remove underline, do not override icon color
-     'mouse-face 'highlight
+     'mouse-face nil
      'follow-link t
      'help-echo "Toggle group (mouse-1, TAB)"
      'keymap ert-flow--suite-button-map
@@ -1756,7 +1756,7 @@ Note: do not override icon color with a uniform button face."
     ;; Body when unfolded (each line with its own icon)
     (unless folded
       (let ((mk (lambda (icon-str body)
-                  (insert (propertize (format "%s %s" icon-str body)
+                  (insert (propertize (format "  %s %s" icon-str body)
                                       'ert-flow--nav 'status-item))
                   (insert "\n"))))
         (funcall mk (ert-flow--status-line-icon 'counters)
@@ -1781,7 +1781,8 @@ Note: do not override icon color with a uniform button face."
   "Toggle folding of the Status block and re-render."
   (interactive)
   (setq ert-flow--panel-status-folded (not ert-flow--panel-status-folded))
-  (ert-flow--render))
+  (let ((ert-flow--panel-buffer-name (buffer-name)))
+    (ert-flow--render)))
 
 (defun ert-flow--render-insert (ctx)
   "Insert Status block and grouped suites using CTX."
@@ -1948,14 +1949,17 @@ Returns plist: (:sess :sum :results :proc) and emits diagnostic logs."
 (defun ert-flow-previous-item () (interactive) (ert-flow--goto-next-item -1))
 
 (defun ert-flow-tab ()
-  "Context-aware TAB: toggle Status at Status header, otherwise toggle suite."
+  "Context-aware TAB: toggle Status at Status header, on any Status line, or toggle suite."
   (interactive)
   (let* ((nav (get-text-property (line-beginning-position) 'ert-flow--nav))
          (suite (get-text-property (line-beginning-position) 'ert-flow--suite)))
     (cond
-     ((eq nav 'status) (ert-flow-toggle-status))
-     (suite (ert-flow-toggle-group-at-point))
-     (t (ert-flow-toggle-group-at-point)))))
+     ((or (eq nav 'status) (eq nav 'status-item))
+      (ert-flow-toggle-status))
+     (suite
+      (ert-flow-toggle-group-at-point))
+     (t
+      (ert-flow-toggle-group-at-point)))))
 
 ;;;###autoload
 (defun ert-flow-goto-definition-at-point ()
