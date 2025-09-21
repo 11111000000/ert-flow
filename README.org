@@ -1,4 +1,4 @@
-#+title: test-flow - Auto-run and results panel for ERT (Emacs Lisp)
+#+title: test-flow - Testing workflow in Emacs
 
 Software is a conversation between what we intended and what actually runs. Tests translate between these two, but the loop “edit → run → read → fix → repeat” too often leaks our attention in tiny drips.
 Test-Flow exists to keep the loop flowing. It watches your project, runs tests when it makes sense (not when you sneeze), parses whatever your runner emits, and shows a crisp, actionable panel near your code.
