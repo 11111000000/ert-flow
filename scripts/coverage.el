@@ -14,7 +14,26 @@
 (require 'json)
 (require 'seq)
 
-(let* ((root (expand-file-name default-directory))
+(defun efcov--find-root (start)
+  "Ascend from START to find project root by markers: flake.nix, Cask, .git, lisp/, tests/."
+  (let ((dir (file-name-as-directory (expand-file-name start)))
+        (prev nil)
+        (res nil))
+    (while (and (not res) (not (equal dir prev)))
+      (when (or (file-exists-p (expand-file-name "flake.nix" dir))
+                (file-exists-p (expand-file-name "Cask" dir))
+                (file-directory-p (expand-file-name ".git" dir))
+                (file-directory-p (expand-file-name "lisp" dir))
+                (file-directory-p (expand-file-name "tests" dir)))
+        (setq res dir))
+      (setq prev dir
+            dir (file-name-directory (directory-file-name dir))))
+    (or res (file-name-as-directory (expand-file-name start)))))
+
+(let* ((root (or (ignore-errors (efcov--find-root default-directory))
+                 (file-name-as-directory (expand-file-name default-directory))))
+       ;; Ensure all subsequent paths resolve under the repo root
+       (default-directory root)
        ;; Prefer conventional dirs; fallback to short aliases.
        (lisp (or (and (file-directory-p (expand-file-name "lisp" root))
                       (expand-file-name "lisp" root))
@@ -30,21 +49,23 @@
   (make-directory cov-dir t)
   (add-to-list 'load-path lisp)
 
-  ;; 1) undercover instrumentation before loading project files
-  (require 'undercover)
-  ;; Undercover — макрос, ожидает литеральные строки, а не выражения.
-  ;; Дадим сразу оба паттерна: для lisp/ и для короткого l/.
-  (undercover "lisp/*.el" "l/*.el"
-              (:report-file coveralls-json)
-              (:send-report nil))
+  ;; 1) undercover instrumentation before loading project files (optional)
+  (let ((have-undercover (ignore-errors (require 'undercover))))
+    (message "undercover: loaded? %s" (if have-undercover "t" "nil"))
+    (when have-undercover
+      ;; Undercover — макрос, ожидает литеральные строки, а не выражения.
+      ;; Дадим сразу оба паттерна: для lisp/ и для короткого l/.
+      (undercover "lisp/*.el" "l/*.el"
+                  (:report-file coveralls-json)
+                  (:send-report nil))))
 
   ;; 2) Load and run tests (avoid *-and-exit to continue post-processing)
   (require 'ert)
-  (load (expand-file-name "ert-flow.el" lisp) nil t)
+  (load (expand-file-name "test-flow.el" lisp) nil t)
   ;; Core tests
-  (load (expand-file-name "ert-flow-tests.el" tests) nil t)
+  (load (expand-file-name "test-flow-tests.el" tests) nil t)
   ;; Coverage tests (optional)
-  (let ((cov-tests (expand-file-name "ert-flow-coverage-tests.el" tests)))
+  (let ((cov-tests (expand-file-name "test-flow-coverage-tests.el" tests)))
     (when (file-exists-p cov-tests)
       (load cov-tests nil t)))
 
@@ -59,11 +80,23 @@
     (message "undercover: expected report at %s" coveralls-json)
 
     ;; Convert Coveralls JSON → LCOV with robust fallback.
-    (let* ((jpath (cond
-                   ((file-exists-p coveralls-json) coveralls-json)
-                   ;; Fallback: ищем coveralls.json где угодно в репо
-                   (t (car (ignore-errors
-                             (directory-files-recursively root "\\`coveralls\\.json\\'")))))))
+    (let* ((jpath
+            (cond
+             ((file-exists-p coveralls-json) coveralls-json)
+             (t
+              ;; Расширенный поиск: берём первый JSON, содержащий "source_files"
+              (let* ((cands (ignore-errors
+                              (append
+                               (directory-files-recursively cov-dir "\\.json\\'")
+                               (directory-files-recursively root "\\`coveralls\\.json\\'"))))
+                     (hit (cl-find-if
+                           (lambda (p)
+                             (ignore-errors
+                               (with-temp-buffer
+                                 (insert-file-contents p)
+                                 (search-forward "\"source_files\"" nil t))))
+                           cands)))
+                hit)))))
       (if (and jpath (file-exists-p jpath))
           (progn
             (message "coverage: converting %s → %s" jpath lcov-info)

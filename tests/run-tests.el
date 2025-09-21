@@ -1,4 +1,4 @@
-;;; run-tests.el --- Batch runner for ert-flow tests -*- lexical-binding: t; -*-
+;;; run-tests.el --- Batch runner for test-flow tests -*- lexical-binding: t; -*-
 
 ;; Usage:
 ;;   emacs -Q --batch -l tests/run-tests.el
@@ -8,11 +8,11 @@
        (lisp (expand-file-name "lisp" root)))
   (add-to-list 'load-path lisp)
   (add-to-list 'load-path root)
-  (require 'ert-flow)
+  (require 'test-flow)
   ;; Optional: coverage module and its tests
-  (ignore-errors (require 'ert-flow-coverage))
-  (load (expand-file-name "tests/ert-flow-tests.el" root) nil t)
-  (let ((cov-tests (expand-file-name "tests/ert-flow-coverage-tests.el" root)))
+  (ignore-errors (require 'test-flow-coverage))
+  (load (expand-file-name "tests/test-flow-tests.el" root) nil t)
+  (let ((cov-tests (expand-file-name "tests/test-flow-coverage-tests.el" root)))
     (when (file-exists-p cov-tests)
       (load cov-tests nil t))))
 

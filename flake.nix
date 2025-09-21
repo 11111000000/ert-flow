@@ -1,5 +1,5 @@
 {
-  description = "Ert-flow dev shell + apps (tests, coverage)";
+  description = "test-flow dev shell + apps (tests, coverage)";
 
   inputs.nixpkgs.url = "github:NixOS/nixpkgs/nixos-25.05";
 
@@ -14,7 +14,14 @@
       let
         emacsWithPkgs =
           (pkgs.emacsPackagesFor pkgs.emacs30-nox).emacsWithPackages
-            (epkgs: [ epkgs.melpaPackages.undercover ]);
+            (epkgs: [
+              epkgs.melpaPackages.undercover
+              epkgs.melpaPackages.dash
+              epkgs.melpaPackages.f
+              epkgs.melpaPackages.s
+              epkgs.melpaPackages.pcache
+              epkgs.melpaPackages.request
+            ]);
       in {
         default = pkgs.mkShell {
           packages = [
@@ -39,7 +46,14 @@
       let
         emacsWithPkgs =
           (pkgs.emacsPackagesFor pkgs.emacs30-nox).emacsWithPackages
-            (epkgs: [ epkgs.melpaPackages.undercover ]);
+            (epkgs: [
+              epkgs.melpaPackages.undercover
+              epkgs.melpaPackages.dash
+              epkgs.melpaPackages.f
+              epkgs.melpaPackages.s
+              epkgs.melpaPackages.pcache
+              epkgs.melpaPackages.request
+            ]);
 
         makeApp = name: text:
           let drv = pkgs.writeShellApplication {
@@ -84,9 +98,16 @@
       let
         emacsWithPkgs =
           (pkgs.emacsPackagesFor pkgs.emacs30-nox).emacsWithPackages
-            (epkgs: [ epkgs.melpaPackages.undercover ]);
+            (epkgs: [
+              epkgs.melpaPackages.undercover
+              epkgs.melpaPackages.dash
+              epkgs.melpaPackages.f
+              epkgs.melpaPackages.s
+              epkgs.melpaPackages.pcache
+              epkgs.melpaPackages.request
+            ]);
       in {
-        tests = pkgs.runCommand "ert-flow-tests" { buildInputs = [ emacsWithPkgs ]; } ''
+        tests = pkgs.runCommand "test-flow-tests" { buildInputs = [ emacsWithPkgs ]; } ''
           set -euo pipefail
           if [ -f tests/run-tests.el ]; then
             TARGET=tests/run-tests.el
@@ -107,10 +128,17 @@
       let
         emacsWithPkgs =
           (pkgs.emacsPackagesFor pkgs.emacs30-nox).emacsWithPackages
-            (epkgs: [ epkgs.melpaPackages.undercover ]);
+            (epkgs: [
+              epkgs.melpaPackages.undercover
+              epkgs.melpaPackages.dash
+              epkgs.melpaPackages.f
+              epkgs.melpaPackages.s
+              epkgs.melpaPackages.pcache
+              epkgs.melpaPackages.request
+            ]);
       in {
         default = pkgs.writeShellApplication {
-          name = "ert-flow-tests";
+          name = "test-flow-tests";
           runtimeInputs = [ emacsWithPkgs ];
           text = ''
             set -euo pipefail

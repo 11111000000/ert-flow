@@ -1,11 +1,11 @@
-#+title: ert-flow - Auto-run and results panel for ERT (Emacs Lisp)
+#+title: test-flow - Auto-run and results panel for ERT (Emacs Lisp)
 
 Software is a conversation between what we intended and what actually runs. Tests translate between these two, but the loop “edit → run → read → fix → repeat” too often leaks our attention in tiny drips.
-Ert-Flow exists to keep the loop flowing. It watches your project, runs tests when it makes sense (not when you sneeze), parses whatever your runner emits, and shows a crisp, actionable panel near your code.
+Test-Flow exists to keep the loop flowing. It watches your project, runs tests when it makes sense (not when you sneeze), parses whatever your runner emits, and shows a crisp, actionable panel near your code.
 
-#+caption: Ert-Flow in action
+#+caption: Test-Flow in action
 #+attr_org: :width 900
-[[./ert-flow.png]]
+[[./test-flow.png]]
 
 * Features at a glance
 - Right-side results panel grouped by suite; foldable sections with status icons.
@@ -31,38 +31,38 @@ Ert-Flow exists to keep the loop flowing. It watches your project, runs tests wh
 ** Package managers
   - Local checkout:
   #+begin_src emacs-lisp
-(use-package ert-flow
-  :load-path "~/Code/ert-flow/lisp"
-  :commands (ert-flow-mode ert-flow-open-panel)
+(use-package test-flow
+  :load-path "~/Code/test-flow/lisp"
+  :commands (test-flow-mode test-flow-open-panel)
   :custom
-  (ert-flow-run-on-open t))
+  (test-flow-run-on-open t))
   #+end_src
 - straight.el:
   #+begin_src emacs-lisp
-(use-package ert-flow
-  :straight (ert-flow
+(use-package test-flow
+  :straight (test-flow
              :type git
              :host github
-             :repo "11111000000/ert-flow"
+             :repo "11111000000/test-flow"
              :branch "main"
              ;; :files ("lisp/*.el") ; uncomment if sources live under lisp/
              )
-  :custom (ert-flow-run-on-open t))
+  :custom (test-flow-run-on-open t))
   #+end_src
 ** Manual
-    - Place ert-flow.el, ert-flow-headerline.el, ert-flow-view-controls.el, ert-flow-controls-icons.el on your load-path.
+    - Place test-flow.el, test-flow-headerline.el, test-flow-view-controls.el, test-flow-controls-icons.el on your load-path.
       #+begin_src emacs-lisp
-     (require 'ert-flow)
+     (require 'test-flow)
       #+end_src
 ** Optional fonts
-  - For all-the-icons: install the fonts and the all-the-icons package. If not present, ert-flow uses Unicode/text gracefully.
+  - For all-the-icons: install the fonts and the all-the-icons package. If not present, test-flow uses Unicode/text gracefully.
 
 * Quick start
 - In your project:
-  - M-x ert-flow-mode
-  - M-x ert-flow-open-panel
-  - M-x ert-flow-detect-runner (auto-finds tests/run-tests.el, nix flake, or Cask)
-  - M-x ert-flow-run
+  - M-x test-flow-mode
+  - M-x test-flow-open-panel
+  - M-x test-flow-detect-runner (auto-finds tests/run-tests.el, nix flake, or Cask)
+  - M-x test-flow-run
 - Panel keybindings (inside the results buffer):
   - r — Run tests
   - f — Run only failed (if external argv + failed-args are configured, else runs all)
@@ -95,110 +95,110 @@ Ert-Flow exists to keep the loop flowing. It watches your project, runs tests wh
 
 * Commands (interactive)
 ** Core flow
-  - ert-flow-mode — global minor mode; opens panel on enable.
-  - ert-flow-open-panel — open/focus session panel for current project.
-  - ert-flow-run — run tests according to per-session runner.
-  - ert-flow-run-failed — re-run failures/errors only (when available), else run all.
-  - ert-flow-detect-runner — detect external command (tests/run-tests.el, nix flake, Cask).
+  - test-flow-mode — global minor mode; opens panel on enable.
+  - test-flow-open-panel — open/focus session panel for current project.
+  - test-flow-run — run tests according to per-session runner.
+  - test-flow-run-failed — re-run failures/errors only (when available), else run all.
+  - test-flow-detect-runner — detect external command (tests/run-tests.el, nix flake, Cask).
 ** Panel operations
-  - ert-flow-toggle-watch — toggle watcher for current session.
-  - ert-flow-copy-failures — copy failures with backtraces (plain/org/markdown).
-  - ert-flow-clear — clear panel and last results.
-  - ert-flow-open-details-at-point — show details view for current test.
-  - ert-flow-goto-definition-at-point — jump to test function if loaded.
-  - Navigation: ert-flow-next-item, ert-flow-previous-item, ert-flow-toggle-group-at-point, ert-flow-toggle-all-groups.
-  - Filters: ert-flow-panel-filter-pass/fail/error/skip/all, ert-flow-panel-set-name-filter, ert-flow-panel-set-tags-filter, ert-flow-panel-filter-clear.
+  - test-flow-toggle-watch — toggle watcher for current session.
+  - test-flow-copy-failures — copy failures with backtraces (plain/org/markdown).
+  - test-flow-clear — clear panel and last results.
+  - test-flow-open-details-at-point — show details view for current test.
+  - test-flow-goto-definition-at-point — jump to test function if loaded.
+  - Navigation: test-flow-next-item, test-flow-previous-item, test-flow-toggle-group-at-point, test-flow-toggle-all-groups.
+  - Filters: test-flow-panel-filter-pass/fail/error/skip/all, test-flow-panel-set-name-filter, test-flow-panel-set-tags-filter, test-flow-panel-filter-clear.
 ** Sessions and dashboard
-  - ert-flow-list-sessions — list sessions with quick actions.
-  - ert-flow-switch-session — jump to another session’s panel.
-  - ert-flow-kill-session / ert-flow-kill-all-sessions — clean up.
-  - ert-flow-dashboard — global overview (processes, sessions, summaries).
+  - test-flow-list-sessions — list sessions with quick actions.
+  - test-flow-switch-session — jump to another session’s panel.
+  - test-flow-kill-session / test-flow-kill-all-sessions — clean up.
+  - test-flow-dashboard — global overview (processes, sessions, summaries).
 ** Debugging and maintenance
-  - ert-flow-toggle-logging — toggle lightweight logs.
-  - ert-flow-dump-concurrency — print concurrency state to /Messages/.
-  - ert-flow-restart — restart ert-flow (cleans sessions/queues/timers, re-opens panel).
+  - test-flow-toggle-logging — toggle lightweight logs.
+  - test-flow-dump-concurrency — print concurrency state to /Messages/.
+  - test-flow-restart — restart test-flow (cleans sessions/queues/timers, re-opens panel).
 
 * Configuration reference (customize these)
 ** Core runner and parsing
 | Variable                                  | Type                               | Default             | Description                                                                 |
 |-------------------------------------------+------------------------------------+---------------------+-----------------------------------------------------------------------------|
-| ert-flow-runner                           | choice: external-command/in-emacs-ert | external-command    | Backend to execute tests.                                                   |
-| ert-flow-parser                           | choice: auto/json/ert-batch        | auto                | Parsing strategy for test output.                                           |
-| ert-flow-external-command                 | list argv or string (shell)        | nil                 | External command to run tests. If string, executed via SHELL -lc.           |
-| ert-flow-external-failed-args-function    | function or nil                    | nil                 | (fn failed-names) → extra argv to run only failures (requires argv form).   |
+| test-flow-runner                           | choice: external-command/in-emacs-ert | external-command    | Backend to execute tests.                                                   |
+| test-flow-parser                           | choice: auto/json/ert-batch        | auto                | Parsing strategy for test output.                                           |
+| test-flow-external-command                 | list argv or string (shell)        | nil                 | External command to run tests. If string, executed via SHELL -lc.           |
+| test-flow-external-failed-args-function    | function or nil                    | nil                 | (fn failed-names) → extra argv to run only failures (requires argv form).   |
 
 ** Watcher and re-run ergonomics
 | Variable                         | Type                              | Default  | Description                                                                |
 |----------------------------------+-----------------------------------+----------+----------------------------------------------------------------------------|
-| ert-flow-watch-mode              | choice: after-save/file-notify/nil| after-save | How to watch the project for changes.                                      |
-| ert-flow-debounce-seconds        | number                            | 0.7      | Delay before running after a triggering change.                            |
-| ert-flow-watch-include-regexp    | regexp or nil                     | \.el\’   | Only paths matching this are eligible (nil = include all).                 |
-| ert-flow-watch-exclude-regexp    | regexp or nil                     | common dirs | Exclude matching paths (.git, .direnv, node_modules, build, dist…).     |
-| ert-flow-file-notify-max-depth   | integer                           | 3        | Recursion depth for file-notify watchers.                                  |
-| ert-flow-session-idle-seconds    | integer                           | 120      | Auto-disable watch for idle sessions after this many seconds.              |
-| ert-flow-idle-gc-interval        | integer                           | 30       | Interval between idle GC checks.                                           |
+| test-flow-watch-mode              | choice: after-save/file-notify/nil| after-save | How to watch the project for changes.                                      |
+| test-flow-debounce-seconds        | number                            | 0.7      | Delay before running after a triggering change.                            |
+| test-flow-watch-include-regexp    | regexp or nil                     | \.el\’   | Only paths matching this are eligible (nil = include all).                 |
+| test-flow-watch-exclude-regexp    | regexp or nil                     | common dirs | Exclude matching paths (.git, .direnv, node_modules, build, dist…).     |
+| test-flow-file-notify-max-depth   | integer                           | 3        | Recursion depth for file-notify watchers.                                  |
+| test-flow-session-idle-seconds    | integer                           | 120      | Auto-disable watch for idle sessions after this many seconds.              |
+| test-flow-idle-gc-interval        | integer                           | 30       | Interval between idle GC checks.                                           |
 
 ** Concurrency and resources
 | Variable                       | Type     | Default | Description                                                       |
 |--------------------------------+----------+---------+-------------------------------------------------------------------|
-| ert-flow-max-concurrent-runs   | integer  | 3       | Global cap on parallel test processes (across sessions).          |
-| ert-flow-max-raw-output-bytes  | int or nil | 1048576 | Cap stored raw stdout/stderr per session (nil = unlimited).     |
+| test-flow-max-concurrent-runs   | integer  | 3       | Global cap on parallel test processes (across sessions).          |
+| test-flow-max-raw-output-bytes  | int or nil | 1048576 | Cap stored raw stdout/stderr per session (nil = unlimited).     |
 
 ** Panel, UI, and header-line
 | Variable                         | Type                        | Default | Description                                                                    |
 |----------------------------------+-----------------------------+---------+--------------------------------------------------------------------------------|
-| ert-flow-panel-side              | choice: right/bottom/left/top | right   | Where to display the side panel.                                               |
-| ert-flow-panel-width             | integer                     | 42      | Panel width in columns.                                                        |
-| ert-flow-icons                   | boolean                     | t       | Show per-test status icons (Unicode or all-the-icons).                         |
-| ert-flow-toolbar-style           | choice: auto/icons/text     | auto    | Prefer icons when available, force icons, or always text.                      |
-| ert-flow-view-headerline-enable  | boolean                     | t       | Show clickable controls in the panel’s header-line.                            |
-| ert-flow-headerline-controls-order | list of symbols/:gap      | (run run-failed :gap watch :gap copy clear :gap detect goto :gap sessions dashboard :gap logging) | Order of header-line controls. |
-| ert-flow-controls-registry       | alist (advanced)            | see code| Declarative controls (labels/icons/commands).                                  |
+| test-flow-panel-side              | choice: right/bottom/left/top | right   | Where to display the side panel.                                               |
+| test-flow-panel-width             | integer                     | 42      | Panel width in columns.                                                        |
+| test-flow-icons                   | boolean                     | t       | Show per-test status icons (Unicode or all-the-icons).                         |
+| test-flow-toolbar-style           | choice: auto/icons/text     | auto    | Prefer icons when available, force icons, or always text.                      |
+| test-flow-view-headerline-enable  | boolean                     | t       | Show clickable controls in the panel’s header-line.                            |
+| test-flow-headerline-controls-order | list of symbols/:gap      | (run run-failed :gap watch :gap copy clear :gap detect goto :gap sessions dashboard :gap logging) | Order of header-line controls. |
+| test-flow-controls-registry       | alist (advanced)            | see code| Declarative controls (labels/icons/commands).                                  |
 
 ** Icon settings (if you use all-the-icons)
 | Variable                            | Type            | Default | Description                                                   |
 |-------------------------------------+-----------------+---------+---------------------------------------------------------------|
-| ert-flow-controls-use-graphic-icons | boolean         | t       | Prefer all-the-icons when available.                          |
-| ert-flow-controls-icon-height       | number          | 0.9     | Uniform icon height in header-line.                           |
-| ert-flow-controls-icon-raise        | number          | 0.11    | Vertical raise via ‘display’ property (fine-tunes alignment). |
-| ert-flow-controls-icon-map          | alist           | mapping | Control-key → (provider . name) or per-state map.             |
-| ert-flow-controls-icon-face-map     | alist           | mapping | Optional face overrides for non-toggle icons.                 |
-| ert-flow-controls-toggle-on-face    | face/plist      | gray85  | Face for toggle icons when ON.                                |
-| ert-flow-controls-toggle-off-face   | face/plist      | gray60  | Face for toggle icons when OFF.                               |
+| test-flow-controls-use-graphic-icons | boolean         | t       | Prefer all-the-icons when available.                          |
+| test-flow-controls-icon-height       | number          | 0.9     | Uniform icon height in header-line.                           |
+| test-flow-controls-icon-raise        | number          | 0.11    | Vertical raise via ‘display’ property (fine-tunes alignment). |
+| test-flow-controls-icon-map          | alist           | mapping | Control-key → (provider . name) or per-state map.             |
+| test-flow-controls-icon-face-map     | alist           | mapping | Optional face overrides for non-toggle icons.                 |
+| test-flow-controls-toggle-on-face    | face/plist      | gray85  | Face for toggle icons when ON.                                |
+| test-flow-controls-toggle-off-face   | face/plist      | gray60  | Face for toggle icons when OFF.                               |
 
 ** Copy failures and reporting
 | Variable                        | Type                      | Default | Description                                                                 |
 |---------------------------------+---------------------------+---------+-----------------------------------------------------------------------------|
-| ert-flow-copy-format            | choice: plain/org/markdown| plain   | Format of copied failure report.                                            |
-| ert-flow-copy-backtrace-limit   | int or nil               | nil     | Truncate each details/backtrace to this many chars.                         |
-| ert-flow-copy-include-stdout    | boolean                  | nil     | Include raw stdout tail (capped by the same limit).                         |
-| ert-flow-copy-include-stderr    | boolean                  | nil     | Include captured stderr tail (capped by the same limit).                    |
+| test-flow-copy-format            | choice: plain/org/markdown| plain   | Format of copied failure report.                                            |
+| test-flow-copy-backtrace-limit   | int or nil               | nil     | Truncate each details/backtrace to this many chars.                         |
+| test-flow-copy-include-stdout    | boolean                  | nil     | Include raw stdout tail (capped by the same limit).                         |
+| test-flow-copy-include-stderr    | boolean                  | nil     | Include captured stderr tail (capped by the same limit).                    |
 
 ** Session quality of life
 | Variable                             | Type      | Default | Description                                                       |
 |--------------------------------------+-----------+---------+-------------------------------------------------------------------|
-| ert-flow-run-on-enable               | boolean   | nil     | If non-nil, run once when ert-flow-mode is enabled.               |
-| ert-flow-auto-detect-on-open         | boolean   | t       | Try to auto-detect external command when opening the panel.       |
-| ert-flow-run-on-open                 | boolean   | t       | First open triggers a run when feasible.                          |
-| ert-flow-log-enabled                 | boolean   | nil     | Print lightweight logs to /Messages/ (toggled via command).       |
-| ert-flow-session-naming-function     | function  | default | (fn root) → name for “*ert-flow: NAME/” buffer.                   |
+| test-flow-run-on-enable               | boolean   | nil     | If non-nil, run once when test-flow-mode is enabled.               |
+| test-flow-auto-detect-on-open         | boolean   | t       | Try to auto-detect external command when opening the panel.       |
+| test-flow-run-on-open                 | boolean   | t       | First open triggers a run when feasible.                          |
+| test-flow-log-enabled                 | boolean   | nil     | Print lightweight logs to /Messages/ (toggled via command).       |
+| test-flow-session-naming-function     | function  | default | (fn root) → name for “*test-flow: NAME/” buffer.                   |
 
 * Example configurations
 ** Minimal external command
-  - (setq ert-flow-external-command '("emacs" "-Q" "--batch" "-l" "tests/run-tests.el"))
+  - (setq test-flow-external-command '("emacs" "-Q" "--batch" "-l" "tests/run-tests.el"))
 ** Per-project .dir-locals (session-level settings)
 #+begin_src 
    ((lisp-mode
-     (ert-flow-runner . external-command)
-     (ert-flow-external-command . ("emacs" "-Q" "--batch" "-l" "tests/run-tests.el"))
-     (ert-flow-parser . auto)
-     (ert-flow-watch-mode . after-save)
-     (ert-flow-debounce-seconds . 0.5)
-     (ert-flow-file-notify-max-depth . 2)))
+     (test-flow-runner . external-command)
+     (test-flow-external-command . ("emacs" "-Q" "--batch" "-l" "tests/run-tests.el"))
+     (test-flow-parser . auto)
+     (test-flow-watch-mode . after-save)
+     (test-flow-debounce-seconds . 0.5)
+     (test-flow-file-notify-max-depth . 2)))
 #+end_src
 ** Run only failed externally (example adapter)
 #+begin_src 
-(setq ert-flow-external-failed-args-function
+(setq test-flow-external-failed-args-function
           (lambda (names)
             (when names
               (list "--" "--tests" (mapconcat #'identity names ",")))))
@@ -220,7 +220,7 @@ Ert-Flow exists to keep the loop flowing. It watches your project, runs tests wh
 #+end_src
 *** Notes
   - status is case-insensitive and accepts pass/ok, fail/failed, error, skip/skipped, xfail.
-  - If duration_ms is missing, ert-flow computes elapsed time when possible.
+  - If duration_ms is missing, test-flow computes elapsed time when possible.
 
 * Using the panel effectively
 ** Start with Status
@@ -233,7 +233,7 @@ Ert-Flow exists to keep the loop flowing. It watches your project, runs tests wh
   - Tooltips explain each control. If icons aren’t available, text labels are used.
 
 ** Runner detection (external)
-- M-x ert-flow-detect-runner tries:
+- M-x test-flow-detect-runner tries:
   - tests/run-tests.el or test/run-tests.el → emacs -Q --batch -l <path>
   - flake.nix → nix run .#tests
   - Cask → cask exec ert-runner
@@ -251,23 +251,23 @@ Ert-Flow exists to keep the loop flowing. It watches your project, runs tests wh
 - in-emacs-ert freezes Emacs
   - It’s synchronous by design. For long suites, pick external-command. Coffee is optional but recommended.
 - “Run failed” still runs everything
-  - Ensure ert-flow-external-command is a list (argv), not a shell string, and set ert-flow-external-failed-args-function.
+  - Ensure test-flow-external-command is a list (argv), not a shell string, and set test-flow-external-failed-args-function.
 - Nothing happens on save
-  - Check ert-flow-watch-mode, include/exclude regexps, and whether your file is under the project root (project.el).
+  - Check test-flow-watch-mode, include/exclude regexps, and whether your file is under the project root (project.el).
 - JSON parser fails mysteriously
-  - Keep batch fallback via ‘auto’. If your runner prints banners around JSON, ert-flow tries to snip “{…}” out; when in doubt, emit a clean JSON blob.
+  - Keep batch fallback via ‘auto’. If your runner prints banners around JSON, test-flow tries to snip “{…}” out; when in doubt, emit a clean JSON blob.
 
 * Faces (customize for your theme)
 - Result faces
-  - ert-flow-face-pass, ert-flow-face-fail, ert-flow-face-error, ert-flow-face-skip
+  - test-flow-face-pass, test-flow-face-fail, test-flow-face-error, test-flow-face-skip
 - Toolbar/header-line faces
-  - ert-flow-headerline
-  - Icon faces: ert-flow-controls-icon-on/off, or overrides via the icon face map.
+  - test-flow-headerline
+  - Icon faces: test-flow-controls-icon-on/off, or overrides via the icon face map.
 - Toolbar button faces (legacy in-buffer toolbar is superseded by header-line controls, but faces remain available)
 
 * Developer notes (optional)
-- Header-line controls are declared in ert-flow-view-controls.el; icons live in ert-flow-controls-icons.el; the renderer and cache are in ert-flow-headerline.el.
-- External runs use make-process with stderr captured separately; sentinel selects stdout vs stderr for parsing, trims buffers according to ert-flow-max-raw-output-bytes.
+- Header-line controls are declared in test-flow-view-controls.el; icons live in test-flow-controls-icons.el; the renderer and cache are in test-flow-headerline.el.
+- External runs use make-process with stderr captured separately; sentinel selects stdout vs stderr for parsing, trims buffers according to test-flow-max-raw-output-bytes.
 - In-Emacs runs enrich results directly from ERT objects: file/line, tags, and backtrace pretty-printing.
 
 * Contributing
@@ -277,7 +277,7 @@ Ert-Flow exists to keep the loop flowing. It watches your project, runs tests wh
   - A screenshot of the panel if a UI quirk is suspected (optional but delightful).
 * Tests
   - You can run package tests in batch:
-    - emacs -Q --batch -L lisp -l ert-flow.el -l tests/ert-flow-tests.el -f ert-run-tests-batch-and-exit
+    - emacs -Q --batch -L lisp -l test-flow.el -l tests/test-flow-tests.el -f ert-run-tests-batch-and-exit
   - Or via your project’s tests/run-tests.el.
 
 * License

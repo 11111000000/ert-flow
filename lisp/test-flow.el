@@ -1,20 +1,20 @@
-;;; ert-flow.el --- Minimal ERT flow: run external tests, parse, show panel -*- lexical-binding: t; -*-
+;;; test-flow.el --- Testing workflow in Emacs -*- lexical-binding: t; -*-
 ;; Author: Peter Kosov <11111000000@email.com>
 ;; Version: 0.1.0
 ;; Package-Requires: ((emacs "27.1"))
 ;; Keywords: tools, lisp, testing
-;; URL: https://github.com/11111000000/ert-flow
+;; URL: https://github.com/11111000000/test-flow
 
 ;;; Commentary:
-;; Minimal working step of ert-flow:
+;; Minimal working step of test-flow:
 ;; - Runs an external command (e.g., `emacs -Q --batch -l tests/run-tests.el`)
 ;; - Parses typical ERT batch output
 ;; - Renders a right-side panel with grouped results
 ;; - Copies failures to the kill-ring
 ;;
-;; Configure `ert-flow-external-command' to match your project.
+;; Configure `test-flow-external-command' to match your project.
 ;; Example:
-;;   (setq ert-flow-external-command
+;;   (setq test-flow-external-command
 ;;         '("emacs" "-Q" "--batch" "-l" "/home/az/Code/acapella/tests/run-tests.el"))
 ;;
 ;; Future steps can add: in-Emacs runner, file-notify watcher, JSON parser, icons, etc.
@@ -30,17 +30,17 @@
 (require 'filenotify)
 (require 'button)
 (require 'all-the-icons nil t)
-(require 'ert-flow-headerline nil t)
-(require 'ert-flow-view-controls nil t)
-(require 'ert-flow-controls-icons nil t)
+(require 'test-flow-headerline nil t)
+(require 'test-flow-view-controls nil t)
+(require 'test-flow-controls-icons nil t)
 
 ;;;###autoload
-(defgroup ert-flow nil
+(defgroup test-flow nil
   "Automate running and visualizing ERT tests."
   :group 'tools
-  :prefix "ert-flow-")
+  :prefix "test-flow-")
 
-(defcustom ert-flow-external-command nil
+(defcustom test-flow-external-command nil
   "Command to run tests externally.
 
 May be either:
@@ -51,115 +51,115 @@ Example list value:
   (\"emacs\" \"-Q\" \"--batch\" \"-l\" \"tests/run-tests.el\")"
   :type '(choice (repeat :tag "argv list" string)
                  (string :tag "shell string"))
-  :group 'ert-flow)
+  :group 'test-flow)
 
-(defcustom ert-flow-external-failed-args-function nil
+(defcustom test-flow-external-failed-args-function nil
   "Function to build extra arguments for running only failed tests.
 
 Called with one argument: a list of failed test names (strings).
-Should return a list of strings to append to `ert-flow-external-command'
+Should return a list of strings to append to `test-flow-external-command'
 when building the command. If nil or returns nil, falls back to running all tests.
 
-Note: This requires `ert-flow-external-command' to be a list form (argv).
+Note: This requires `test-flow-external-command' to be a list form (argv).
 If it's a shell string, this feature is unavailable."
   :type '(choice (const :tag "Disabled" nil)
                  (function :tag "Function (names -> argv fragment)"))
-  :group 'ert-flow)
+  :group 'test-flow)
 
-(defcustom ert-flow-panel-side 'right
+(defcustom test-flow-panel-side 'right
   "Panel side for displaying ERT results."
   :type '(choice (const right) (const bottom) (const left) (const top))
-  :group 'ert-flow)
+  :group 'test-flow)
 
-(defcustom ert-flow-panel-width 42
+(defcustom test-flow-panel-width 42
   "Panel width in columns for side window display."
   :type 'integer
-  :group 'ert-flow)
+  :group 'test-flow)
 
-(defcustom ert-flow-icons t
+(defcustom test-flow-icons t
   "Whether to show unicode status icons in the panel (per-test status icons)."
   :type 'boolean
-  :group 'ert-flow)
+  :group 'test-flow)
 
-(defcustom ert-flow-toolbar-style 'auto
+(defcustom test-flow-toolbar-style 'auto
   "Toolbar rendering style.
 
 - 'auto  — use all-the-icons if available, otherwise use Unicode/text
 - 'icons — require all-the-icons (fallback to text if unavailable)
 - 'text  — always use text (no icon glyphs)"
   :type '(choice (const auto) (const icons) (const text))
-  :group 'ert-flow)
+  :group 'test-flow)
 
-(defface ert-flow-face-pass
+(defface test-flow-face-pass
   '((t :foreground "SpringGreen3" :weight bold))
   "Face for passed test icons."
-  :group 'ert-flow)
+  :group 'test-flow)
 
-(defface ert-flow-face-fail
+(defface test-flow-face-fail
   '((t :foreground "red3" :weight bold))
   "Face for failed test icons."
-  :group 'ert-flow)
+  :group 'test-flow)
 
-(defface ert-flow-face-error
+(defface test-flow-face-error
   '((t :foreground "orange red" :weight bold))
   "Face for error test icons."
-  :group 'ert-flow)
+  :group 'test-flow)
 
-(defface ert-flow-face-skip
+(defface test-flow-face-skip
   '((t :inherit shadow))
   "Face for skipped/xfail test icons."
-  :group 'ert-flow)
+  :group 'test-flow)
 
-(defface ert-flow-toolbar-run
+(defface test-flow-toolbar-run
   '((t :foreground "SpringGreen3" :weight bold))
   "Face for the Run toolbar button."
-  :group 'ert-flow)
+  :group 'test-flow)
 
-(defface ert-flow-toolbar-run-failed
+(defface test-flow-toolbar-run-failed
   '((t :foreground "DarkOrange2" :weight bold))
   "Face for the Run failed toolbar button."
-  :group 'ert-flow)
+  :group 'test-flow)
 
-(defface ert-flow-toolbar-watch
+(defface test-flow-toolbar-watch
   '((t :foreground "DeepSkyBlue3" :weight bold))
   "Face for the Watch toolbar button."
-  :group 'ert-flow)
+  :group 'test-flow)
 
-(defface ert-flow-toolbar-copy
+(defface test-flow-toolbar-copy
   '((t :foreground "SteelBlue3" :weight bold))
   "Face for the Copy toolbar button."
-  :group 'ert-flow)
+  :group 'test-flow)
 
-(defface ert-flow-toolbar-clear
+(defface test-flow-toolbar-clear
   '((t :foreground "gray60"))
   "Face for the Clear toolbar button."
-  :group 'ert-flow)
+  :group 'test-flow)
 
-(defface ert-flow-toolbar-detect
+(defface test-flow-toolbar-detect
   '((t :foreground "MediumPurple3" :weight bold))
   "Face for the Detect toolbar button."
-  :group 'ert-flow)
+  :group 'test-flow)
 
-(defface ert-flow-toolbar-goto
+(defface test-flow-toolbar-goto
   '((t :foreground "Gold3" :weight bold))
   "Face for the Goto toolbar button."
-  :group 'ert-flow)
+  :group 'test-flow)
 
-(defcustom ert-flow-run-on-enable nil
-  "If non-nil, run tests once when `ert-flow-mode' is enabled."
+(defcustom test-flow-run-on-enable nil
+  "If non-nil, run tests once when `test-flow-mode' is enabled."
   :type 'boolean
-  :group 'ert-flow)
+  :group 'test-flow)
 
-(defcustom ert-flow-auto-detect-on-open t
+(defcustom test-flow-auto-detect-on-open t
   "If non-nil, auto-detect external command when opening the panel.
 
 When the runner is 'external-command and a session has no command configured,
-`ert-flow-open-panel' will look for common entrypoints like tests/run-tests.el
+`test-flow-open-panel' will look for common entrypoints like tests/run-tests.el
 (and test/run-tests.el) and set a per-session command automatically."
   :type 'boolean
-  :group 'ert-flow)
+  :group 'test-flow)
 
-(defcustom ert-flow-run-on-open t
+(defcustom test-flow-run-on-open t
   "If non-nil, run tests once upon opening the panel when no results are present.
 
 This first-run happens only once per session per Emacs session and respects the
@@ -167,14 +167,14 @@ selected runner:
 - external-command: runs if a command is configured or auto-detected
 - in-emacs-ert: runs unconditionally"
   :type 'boolean
-  :group 'ert-flow)
+  :group 'test-flow)
 
-(defcustom ert-flow-log-enabled nil
+(defcustom test-flow-log-enabled nil
   "Enable lightweight logging for debugging."
   :type 'boolean
-  :group 'ert-flow)
+  :group 'test-flow)
 
-(defcustom ert-flow-watch-mode 'after-save
+(defcustom test-flow-watch-mode 'after-save
   "Watch mode for auto-running tests.
 
 Supported:
@@ -184,40 +184,40 @@ Supported:
   :type '(choice (const :tag "after-save" after-save)
                  (const :tag "file-notify" file-notify)
                  (const :tag "disabled" nil))
-  :group 'ert-flow)
+  :group 'test-flow)
 
-(defcustom ert-flow-debounce-seconds 0.7
+(defcustom test-flow-debounce-seconds 0.7
   "Debounce time (seconds) before running tests after a change."
   :type 'number
-  :group 'ert-flow)
+  :group 'test-flow)
 
-(defcustom ert-flow-watch-include-regexp "\\.el\\'"
+(defcustom test-flow-watch-include-regexp "\\.el\\'"
   "Regexp for files to include in watch (nil means include all)."
   :type '(choice (const :tag "All files" nil)
                  (regexp :tag "Include regexp"))
-  :group 'ert-flow)
+  :group 'test-flow)
 
-(defcustom ert-flow-watch-exclude-regexp "/\\(?:\\.git\\|\\.direnv\\|node_modules\\|build\\|dist\\|coverage\\)/"
+(defcustom test-flow-watch-exclude-regexp "/\\(?:\\.git\\|\\.direnv\\|node_modules\\|build\\|dist\\|coverage\\)/"
   "Regexp for paths to exclude from watch (nil means exclude none)."
   :type '(choice (const :tag "Exclude none" nil)
                  (regexp :tag "Exclude regexp"))
-  :group 'ert-flow)
+  :group 'test-flow)
 
-(defcustom ert-flow-file-notify-max-depth 3
+(defcustom test-flow-file-notify-max-depth 3
   "Maximum recursion depth for directory watchers in 'file-notify mode."
   :type 'integer
-  :group 'ert-flow)
+  :group 'test-flow)
 
-(defcustom ert-flow-parser 'auto
+(defcustom test-flow-parser 'auto
   "Parser mode for interpreting test output.
 
 - 'auto: try JSON first, then fallback to batch ERT parsing
 - 'json: expect JSON object with fields 'summary' and 'tests'
 - 'ert-batch: parse standard ERT batch output"
   :type '(choice (const auto) (const json) (const ert-batch))
-  :group 'ert-flow)
+  :group 'test-flow)
 
-(defcustom ert-flow-runner 'external-command
+(defcustom test-flow-runner 'external-command
   "Runner backend to use.
 
 - 'external-command — run an external process (default)
@@ -226,69 +226,69 @@ Supported:
 Note: 'in-emacs-ert runs synchronously and may block UI for long suites, but
 it avoids external processes and provides immediate access to loaded tests."
   :type '(choice (const external-command) (const in-emacs-ert))
-  :group 'ert-flow)
+  :group 'test-flow)
 
-(defcustom ert-flow-max-concurrent-runs 3
+(defcustom test-flow-max-concurrent-runs 3
   "Maximum number of concurrent test processes across all sessions."
   :type 'integer
-  :group 'ert-flow)
+  :group 'test-flow)
 
-(defcustom ert-flow-session-idle-seconds 120
+(defcustom test-flow-session-idle-seconds 120
   "Seconds of inactivity after which a session's watcher is auto-disabled."
   :type 'integer
-  :group 'ert-flow)
+  :group 'test-flow)
 
-(defcustom ert-flow-idle-gc-interval 30
+(defcustom test-flow-idle-gc-interval 30
   "Seconds between idle GC ticks checking sessions for auto-disabling watchers."
   :type 'integer
-  :group 'ert-flow)
+  :group 'test-flow)
 
-(defcustom ert-flow-max-raw-output-bytes 1048576
+(defcustom test-flow-max-raw-output-bytes 1048576
   "Maximum size (in characters) of accumulated raw output kept in memory per session.
 
 When NIL, do not trim. To save memory, a value like 1 MiB (1048576) is recommended."
   :type '(choice (const :tag "No limit" nil) integer)
-  :group 'ert-flow)
+  :group 'test-flow)
 
-(defcustom ert-flow-copy-format 'plain
+(defcustom test-flow-copy-format 'plain
   "Format for copying failures: 'plain (default), 'org, or 'markdown."
   :type '(choice (const plain) (const org) (const markdown))
-  :group 'ert-flow)
+  :group 'test-flow)
 
-(defcustom ert-flow-copy-include-stdout nil
+(defcustom test-flow-copy-include-stdout nil
   "If non-nil, include the session's raw stdout tail in the copied failures block.
 
-Length is capped by `ert-flow-copy-backtrace-limit' if non-nil."
+Length is capped by `test-flow-copy-backtrace-limit' if non-nil."
   :type 'boolean
-  :group 'ert-flow)
+  :group 'test-flow)
 
-(defcustom ert-flow-copy-include-stderr nil
+(defcustom test-flow-copy-include-stderr nil
   "If non-nil, include the session's raw stderr tail in the copied failures block.
 
-Length is capped by `ert-flow-copy-backtrace-limit' if non-nil."
+Length is capped by `test-flow-copy-backtrace-limit' if non-nil."
   :type 'boolean
-  :group 'ert-flow)
+  :group 'test-flow)
 
-(defcustom ert-flow-session-naming-function
-  (function ert-flow--default-session-name)
+(defcustom test-flow-session-naming-function
+  (function test-flow--default-session-name)
   "Function to produce a human-friendly session name from the project ROOT.
 
 Signature: (fn root-string) → name-string."
   :type 'function
-  :group 'ert-flow)
+  :group 'test-flow)
 
-(defcustom ert-flow-copy-backtrace-limit nil
+(defcustom test-flow-copy-backtrace-limit nil
   "If non-nil, truncate each backtrace/details string to this many characters."
   :type '(choice (const :tag "No limit" nil) integer)
-  :group 'ert-flow)
+  :group 'test-flow)
 
-(defconst ert-flow--panel-buffer-name "*ert-flow*"
-  "Name of the ert-flow panel buffer.")
+(defconst test-flow--panel-buffer-name "*test-flow*"
+  "Name of the test-flow panel buffer.")
 
-(defconst ert-flow--details-buffer-name "*ert-flow: details*"
-  "Name of the ert-flow details buffer.")
+(defconst test-flow--details-buffer-name "*test-flow: details*"
+  "Name of the test-flow details buffer.")
 
-(defconst ert-flow--status-icons
+(defconst test-flow--status-icons
   '((pass  . "✓")
     (fail  . "✕")
     (error . "!")
@@ -296,79 +296,79 @@ Signature: (fn root-string) → name-string."
     (xfail . "∼"))
   "Mapping of status symbol to a short visual glyph.")
 
-(defvar ert-flow--last-raw-output nil
+(defvar test-flow--last-raw-output nil
   "Raw stdout of the last external test run.")
 
-(defvar ert-flow--last-results nil
+(defvar test-flow--last-results nil
   "List of test result alists from the last run.")
 
-(defvar ert-flow--last-summary nil
+(defvar test-flow--last-summary nil
   "Alist of summary fields from the last run.")
 
-(defvar ert-flow--process nil
+(defvar test-flow--process nil
   "Current running process object, if any.")
 
-(defvar ert-flow--last-run-root nil
+(defvar test-flow--last-run-root nil
   "Absolute project root of the last started run. Used to route rendering to the correct panel.")
 
-(defvar ert-flow--debounce-timer nil
+(defvar test-flow--debounce-timer nil
   "Internal timer used to debounce auto-runs.")
 
-(defvar ert-flow--watch-enabled nil
+(defvar test-flow--watch-enabled nil
   "Non-nil when watch is enabled.")
 
-(defvar ert-flow--file-notify-handles nil
+(defvar test-flow--file-notify-handles nil
   "List of file-notify descriptors for active watchers.")
 
-(defvar ert-flow--active-after-save-count 0
+(defvar test-flow--active-after-save-count 0
   "Count of sessions with after-save watch enabled.")
 
-(defvar ert-flow--active-run-count 0
+(defvar test-flow--active-run-count 0
   "Number of currently running test processes across all sessions.")
 
-(defvar ert-flow--run-queue nil
+(defvar test-flow--run-queue nil
   "Queue (FIFO) of pending runs as items: plist with :thunk :label :root :cmd.")
 
-(defvar ert-flow--idle-gc-timer nil
+(defvar test-flow--idle-gc-timer nil
   "Global timer that periodically auto-disables idle session watchers.")
 
-(defun ert-flow--log (fmt &rest args)
-  "Log a debug message FMT with ARGS when `ert-flow-log-enabled' is non-nil."
-  (when ert-flow-log-enabled
-    (apply #'message (concat "[ert-flow] " fmt) args)))
+(defun test-flow--log (fmt &rest args)
+  "Log a debug message FMT with ARGS when `test-flow-log-enabled' is non-nil."
+  (when test-flow-log-enabled
+    (apply #'message (concat "[test-flow] " fmt) args)))
 
-(defun ert-flow--dbg-sess (s)
+(defun test-flow--dbg-sess (s)
   "Return a concise debug string describing session S."
   (when s
     (format "root=%s panel=%s details=%s watch=%s runner=%s parser=%s last-parser=%s proc=%s"
-            (ert-flow--session-root s)
-            (ert-flow--session-panel-buf-name s)
-            (ert-flow--session-details-buf-name s)
-            (if (ert-flow--get-watch-enabled s) "On" "Off")
-            (ert-flow--conf s 'runner ert-flow-runner)
-            (ert-flow--conf s 'parser ert-flow-parser)
-            (or (ert-flow--get-last-parser s) "-")
-            (if (process-live-p (ert-flow--session-process s)) "live" "nil"))))
+            (test-flow--session-root s)
+            (test-flow--session-panel-buf-name s)
+            (test-flow--session-details-buf-name s)
+            (if (test-flow--get-watch-enabled s) "On" "Off")
+            (test-flow--conf s 'runner test-flow-runner)
+            (test-flow--conf s 'parser test-flow-parser)
+            (or (test-flow--get-last-parser s) "-")
+            (if (process-live-p (test-flow--session-process s)) "live" "nil"))))
 
-(defun ert-flow--dbg-conf (s)
+(defun test-flow--dbg-conf (s)
   "Return a concise debug string describing important config of session S."
   (when s
     (format "cfg: side=%s width=%s debounce=%s include=%S exclude=%S ext-cmd=%S"
-            (ert-flow--conf s 'panel-side ert-flow-panel-side)
-            (ert-flow--conf s 'panel-width ert-flow-panel-width)
-            (ert-flow--conf s 'debounce-seconds ert-flow-debounce-seconds)
-            (ert-flow--conf s 'watch-include-regexp ert-flow-watch-include-regexp)
-            (ert-flow--conf s 'watch-exclude-regexp ert-flow-watch-exclude-regexp)
-            (ert-flow--conf s 'external-command ert-flow-external-command))))
+            (test-flow--conf s 'panel-side test-flow-panel-side)
+            (test-flow--conf s 'panel-width test-flow-panel-width)
+            (test-flow--conf s 'debounce-seconds test-flow-debounce-seconds)
+            (test-flow--conf s 'watch-include-regexp test-flow-watch-include-regexp)
+            (test-flow--conf s 'watch-exclude-regexp test-flow-watch-exclude-regexp)
+            (test-flow--conf s 'external-command test-flow-external-command))))
 
 ;;;; Utilities
 
-(defun ert-flow--string-trim (s)
+(defun test-flow--string-trim (s)
   "Trim whitespace around string S."
   (when (stringp s)
     (string-trim s)))
 
-(defun ert-flow--suite-of (test-name)
+(defun test-flow--suite-of (test-name)
   "Return suite name derived from TEST-NAME (prefix until first '/')."
   (let* ((s (or test-name ""))
          (idx (string-match "/" s)))
@@ -376,9 +376,9 @@ Signature: (fn root-string) → name-string."
         (substring s 0 idx)
       s)))
 
-(defun ert-flow--status-icon (status)
+(defun test-flow--status-icon (status)
   "Return icon string for STATUS, using Material icons if available."
-  (let ((icons-ok (and (memq ert-flow-toolbar-style '(auto icons))
+  (let ((icons-ok (and (memq test-flow-toolbar-style '(auto icons))
                        (featurep 'all-the-icons)
                        (display-graphic-p)
                        (find-font (font-spec :family "Material Icons"))
@@ -391,19 +391,19 @@ Signature: (fn root-string) → name-string."
           ('skip  (all-the-icons-material "remove_circle_outline"))
           ('xfail (all-the-icons-material "remove_circle_outline"))
           (_      (all-the-icons-material "help")))
-      (or (cdr (assq status ert-flow--status-icons)) "?"))))
+      (or (cdr (assq status test-flow--status-icons)) "?"))))
 
-(defun ert-flow--status-face (status)
+(defun test-flow--status-face (status)
   "Return face symbol for STATUS."
   (pcase status
-    ('pass  'ert-flow-face-pass)
-    ('fail  'ert-flow-face-fail)
-    ('error 'ert-flow-face-error)
-    ('skip  'ert-flow-face-skip)
-    ('xfail 'ert-flow-face-skip)
+    ('pass  'test-flow-face-pass)
+    ('fail  'test-flow-face-fail)
+    ('error 'test-flow-face-error)
+    ('skip  'test-flow-face-skip)
+    ('xfail 'test-flow-face-skip)
     (_ 'default)))
 
-(defun ert-flow--normalize-command (value)
+(defun test-flow--normalize-command (value)
   "Normalize command VALUE to a list suitable for `make-process' :command.
 
 If VALUE is a list, return it as-is.
@@ -418,16 +418,16 @@ If VALUE is a string, wrap with shell runner."
 
 ;;;; Parsing ERT batch output
 
-(defun ert-flow--batch-clean-name (s)
+(defun test-flow--batch-clean-name (s)
   "Return NAME from ERT summary line, stripping timing/location suffixes.
 Examples:
-  \"ert-flow/render-smoke (0.000 sec) at tests/foo.el:12\" -> \"ert-flow/render-smoke\"."
-  (let* ((nm (ert-flow--string-trim s)))
+  \"test-flow/render-smoke (0.000 sec) at tests/foo.el:12\" -> \"test-flow/render-smoke\"."
+  (let* ((nm (test-flow--string-trim s)))
     (if (string-match "\\`\\([^ ]+\\)" nm)
         (match-string 1 nm)
       nm)))
 
-(defun ert-flow--batch--extract-details-block (lines i)
+(defun test-flow--batch--extract-details-block (lines i)
   "Extract details block starting after index I in LINES.
 Return cons (block . next-i) where next-i is position to continue loop."
   (let* ((start (1+ i))
@@ -437,7 +437,7 @@ Return cons (block . next-i) where next-i is position to continue loop."
       (cl-incf j))
     (cons (string-join (cl-subseq lines start j) "\n") (1- j))))
 
-(defun ert-flow--batch-pass1 (lines)
+(defun test-flow--batch-pass1 (lines)
   "Scan LINES and collect name->status/details, totals and time.
 
 Return a plist:
@@ -467,7 +467,7 @@ Return a plist:
      ;; Early classification
      (when (string-match "^[ \t]*\\(FAILED\\|ERROR\\|SKIPPED\\|XFAIL\\|XPASS\\)[ \t]+[0-9]+/[0-9]+[ \t]+\\(.+\\)$" line)
        (let* ((kw (match-string 1 line))
-              (nm (ert-flow--batch-clean-name (match-string 2 line)))
+              (nm (test-flow--batch-clean-name (match-string 2 line)))
               (st (pcase kw
                     ("FAILED"  'fail)
                     ("ERROR"   'error)
@@ -480,11 +480,11 @@ Return a plist:
      ;; Details blocks
      (when (string-match "^Test[ \t]+\\([^ \t]+\\)[ \t]+\\(backtrace\\|condition\\):$" line)
        (let* ((nm (match-string 1 line))
-              (pair (ert-flow--batch--extract-details-block lines i))
+              (pair (test-flow--batch--extract-details-block lines i))
               (block (car pair))
               (next-i (cdr pair)))
          (puthash nm t all-names)
-         (puthash nm (ert-flow--string-trim block) name->details)
+         (puthash nm (test-flow--string-trim block) name->details)
          (setq i next-i)))
      ;; Totals and time
      (when (and (null total)
@@ -506,7 +506,7 @@ Return a plist:
           :all-names all-names
           :total total :unexpected unexpected :time time-str)))
 
-(defun ert-flow--batch-pass2-final-status (lines name->status all-names)
+(defun test-flow--batch-pass2-final-status (lines name->status all-names)
   "Update NAME->STATUS and ALL-NAMES from final section in LINES.
 
 Understands additional markers if present:
@@ -516,7 +516,7 @@ Also tolerates progress counters like \"FAILED 2/15 NAME\"."
   (dolist (line lines)
     (when (string-match "^[ \t]*\\(FAILED\\|ERROR\\|SKIPPED\\|XFAIL\\|XPASS\\)\\(?:[ \t]+[0-9]+/[0-9]+\\)?[ \t]+\\(.+\\)$" line)
       (let* ((kw (match-string 1 line))
-             (nm (ert-flow--batch-clean-name (match-string 2 line)))
+             (nm (test-flow--batch-clean-name (match-string 2 line)))
              (st (pcase kw
                    ("FAILED"  'fail)
                    ("ERROR"   'error)
@@ -527,7 +527,7 @@ Also tolerates progress counters like \"FAILED 2/15 NAME\"."
         (puthash nm t all-names)
         (puthash nm st name->status)))))
 
-(defun ert-flow--batch-build-results (tables)
+(defun test-flow--batch-build-results (tables)
   "Build result plists from TABLES plist."
   (let* ((name->status (plist-get tables :name->status))
          (name->details (plist-get tables :name->details))
@@ -538,7 +538,7 @@ Also tolerates progress counters like \"FAILED 2/15 NAME\"."
        (let* ((status (or (gethash nm name->status) 'fail))
               (details (or (gethash nm name->details) ""))
               (message (car (split-string details "\n" t)))
-              (suite (ert-flow--suite-of nm)))
+              (suite (test-flow--suite-of nm)))
          (push (list :name nm
                      :status status
                      :message (or message (symbol-name status))
@@ -548,7 +548,7 @@ Also tolerates progress counters like \"FAILED 2/15 NAME\"."
      all-names)
     (nreverse results)))
 
-(defun ert-flow--batch-build-summary (time-str total unexpected results)
+(defun test-flow--batch-build-summary (time-str total unexpected results)
   "Compute summary alist from TIME-STR TOTAL UNEXPECTED RESULTS."
   (let* ((p (cl-count-if (lambda (r) (eq (plist-get r :status) 'pass)) results))
          (f (cl-count-if (lambda (r) (eq (plist-get r :status) 'fail)) results))
@@ -564,16 +564,16 @@ Also tolerates progress counters like \"FAILED 2/15 NAME\"."
       (duration-ms . ,duration-ms)
       (passed . ,p) (failed . ,f) (error . ,e) (skipped . ,s))))
 
-(defun ert-flow--parse-batch-output (out)
+(defun test-flow--parse-batch-output (out)
   "Parse ERT batch OUT and return (SUMMARY . RESULTS). See helpers."
   (let* ((lines (split-string (or out "") "\n"))
-         (t1 (ert-flow--batch-pass1 lines))
-         (_ (ert-flow--batch-pass2-final-status
+         (t1 (test-flow--batch-pass1 lines))
+         (_ (test-flow--batch-pass2-final-status
              lines
              (plist-get t1 :name->status)
              (plist-get t1 :all-names)))
-         (results (ert-flow--batch-build-results t1))
-         (summary (ert-flow--batch-build-summary
+         (results (test-flow--batch-build-results t1))
+         (summary (test-flow--batch-build-summary
                    (plist-get t1 :time)
                    (plist-get t1 :total)
                    (plist-get t1 :unexpected)
@@ -583,21 +583,21 @@ Also tolerates progress counters like \"FAILED 2/15 NAME\"."
            (e (cl-count-if (lambda (r) (eq (plist-get r :status) 'error)) results))
            (s (cl-count-if (lambda (r) (memq (plist-get r :status) '(skip xfail))) results))
            (u (and (listp summary) (alist-get 'unexpected summary))))
-      (ert-flow--log "batch parsed: total=%s results=%d P:%d F:%d E:%d S:%d U:%s time=%s"
-                     (or (alist-get 'total summary) "?")
-                     (length results)
-                     p f e s
-                     (or u 0)
-                     (or (alist-get 'time summary) "-")))
+      (test-flow--log "batch parsed: total=%s results=%d P:%d F:%d E:%d S:%d U:%s time=%s"
+                      (or (alist-get 'total summary) "?")
+                      (length results)
+                      p f e s
+                      (or u 0)
+                      (or (alist-get 'time summary) "-")))
     (when (and (= (length results) 0)
                (stringp out) (> (length out) 0))
-      (ert-flow--log "batch parsed 0 results; first 200 chars:\n%s"
-                     (substring out 0 (min 200 (length out)))))
+      (test-flow--log "batch parsed 0 results; first 200 chars:\n%s"
+                      (substring out 0 (min 200 (length out)))))
     (cons summary results)))
 
 ;;;; JSON parsing and auto-dispatch
 
-(defun ert-flow--json-safe-substring (s)
+(defun test-flow--json-safe-substring (s)
   "Return substring of S from first { to last }, or nil."
   (when (stringp s)
     (let ((start (string-match "{" s)))
@@ -606,7 +606,7 @@ Also tolerates progress counters like \"FAILED 2/15 NAME\"."
           (when (and end (>= end start))
             (substring s start (1+ end))))))))
 
-(defun ert-flow--aget (key obj)
+(defun test-flow--aget (key obj)
   "Lookup KEY in alist OBJ, tolerating string or symbol keys.
 
 If KEY is a string, also tries its interned symbol.
@@ -615,24 +615,24 @@ If KEY is a symbol, also tries its name as a string."
       (and (stringp key) (alist-get (intern key) obj))
       (and (symbolp key) (alist-get (symbol-name key) obj nil nil #'equal))))
 
-(defun ert-flow--json-parse (out)
+(defun test-flow--json-parse (out)
   "Return parsed JSON object (alist) from OUT or signal on failure."
-  (let* ((json-str (or (ert-flow--json-safe-substring out) out)))
+  (let* ((json-str (or (test-flow--json-safe-substring out) out)))
     (json-parse-string json-str :object-type 'alist :array-type 'list)))
 
-(defun ert-flow--json-tests (obj)
+(defun test-flow--json-tests (obj)
   "Extract tests array from OBJ, returning a list or nil."
-  (let ((tests-raw (ert-flow--aget "tests" obj)))
+  (let ((tests-raw (test-flow--aget "tests" obj)))
     (cond
      ((null tests-raw) nil)
      ((listp tests-raw) tests-raw)
      ((vectorp tests-raw) (append tests-raw nil))
      (t (signal 'wrong-type-argument (list 'list tests-raw))))))
 
-(defun ert-flow--json-test->plist (tobj)
-  "Convert a single TOBJ (alist from JSON) into an ert-flow result plist."
-  (let* ((nm (ert-flow--aget "name" tobj))
-         (st-str (ert-flow--aget "status" tobj))
+(defun test-flow--json-test->plist (tobj)
+  "Convert a single TOBJ (alist from JSON) into an test-flow result plist."
+  (let* ((nm (test-flow--aget "name" tobj))
+         (st-str (test-flow--aget "status" tobj))
          (st (pcase (and st-str (downcase (format "%s" st-str)))
                ("pass" 'pass) ("ok" 'pass)
                ("fail" 'fail) ("failed" 'fail)
@@ -640,11 +640,11 @@ If KEY is a symbol, also tries its name as a string."
                ("skip" 'skip) ("skipped" 'skip)
                ("xfail" 'xfail)
                (_ 'fail)))
-         (msg (ert-flow--aget "message" tobj))
-         (det (ert-flow--aget "details" tobj))
-         (file (ert-flow--aget "file" tobj))
-         (line (ert-flow--aget "line" tobj))
-         (suite (ert-flow--suite-of nm)))
+         (msg (test-flow--aget "message" tobj))
+         (det (test-flow--aget "details" tobj))
+         (file (test-flow--aget "file" tobj))
+         (line (test-flow--aget "line" tobj))
+         (suite (test-flow--suite-of nm)))
     (list :name (and nm (format "%s" nm))
           :status st
           :message (or msg (and det (car (split-string (format "%s" det) "\n" t))) (symbol-name st))
@@ -653,39 +653,39 @@ If KEY is a symbol, also tries its name as a string."
           :file (and file (format "%s" file))
           :line (and line (string-to-number (format "%s" line))))))
 
-(defun ert-flow--json-build-summary (summary-raw results)
+(defun test-flow--json-build-summary (summary-raw results)
   "Build summary alist from SUMMARY-RAW (alist) and RESULTS (list)."
-  (let* ((raw-total (and summary-raw (ert-flow--aget "total" summary-raw)))
+  (let* ((raw-total (and summary-raw (test-flow--aget "total" summary-raw)))
          (total (cond
                  ((numberp raw-total) raw-total)
                  ((and (stringp raw-total) (string-match-p "\\`[0-9]+\\'" raw-total))
                   (string-to-number raw-total))
                  (t (length results))))
-         (p (or (and summary-raw (ert-flow--aget "passed" summary-raw))
+         (p (or (and summary-raw (test-flow--aget "passed" summary-raw))
                 (cl-count-if (lambda (r) (eq (plist-get r :status) 'pass)) results)))
-         (f (or (and summary-raw (ert-flow--aget "failed" summary-raw))
+         (f (or (and summary-raw (test-flow--aget "failed" summary-raw))
                 (cl-count-if (lambda (r) (eq (plist-get r :status) 'fail)) results)))
-         (e (or (and summary-raw (ert-flow--aget "error" summary-raw))
+         (e (or (and summary-raw (test-flow--aget "error" summary-raw))
                 (cl-count-if (lambda (r) (eq (plist-get r :status) 'error)) results)))
-         (s (or (and summary-raw (ert-flow--aget "skipped" summary-raw))
+         (s (or (and summary-raw (test-flow--aget "skipped" summary-raw))
                 (cl-count-if (lambda (r) (memq (plist-get r :status) '(skip xfail))) results)))
          (unexpected (seq-count (lambda (r) (memq (plist-get r :status) '(fail error))) results))
          (duration-ms
-          (let ((dm (and summary-raw (ert-flow--aget "duration_ms" summary-raw)))
-                (tstr (and summary-raw (ert-flow--aget "time" summary-raw))))
+          (let ((dm (and summary-raw (test-flow--aget "duration_ms" summary-raw)))
+                (tstr (and summary-raw (test-flow--aget "time" summary-raw))))
             (cond
              ((numberp dm) dm)
              ((and (stringp dm) (string-match-p "\\`[0-9]+\\'" dm)) (string-to-number dm))
              ((and (stringp tstr) (string-match-p "\\`[0-9.]+\\'" tstr))
               (truncate (* 1000 (string-to-number tstr))))
              (t nil))))
-         (time-str (let ((tval (and summary-raw (ert-flow--aget "time" summary-raw))))
+         (time-str (let ((tval (and summary-raw (test-flow--aget "time" summary-raw))))
                      (and tval (format "%s" tval)))))
     `((total . ,total) (unexpected . ,unexpected)
       (time . ,time-str) (duration-ms . ,duration-ms)
       (passed . ,p) (failed . ,f) (error . ,e) (skipped . ,s))))
 
-(defun ert-flow--parse-json-output (out)
+(defun test-flow--parse-json-output (out)
   "Parse JSON OUT and return (SUMMARY . RESULTS) or nil on failure.
 
 Expected keys:
@@ -694,227 +694,227 @@ Expected keys:
 
 Defensive parsing: accepts vectors or lists for arrays, tolerates missing keys."
   (condition-case _err
-      (let* ((obj (ert-flow--json-parse out))
-             (tests-raw (ert-flow--json-tests obj))
-             (results (mapcar #'ert-flow--json-test->plist tests-raw))
-             (summary-raw (ert-flow--aget "summary" obj))
-             (summary (ert-flow--json-build-summary summary-raw results)))
+      (let* ((obj (test-flow--json-parse out))
+             (tests-raw (test-flow--json-tests obj))
+             (results (mapcar #'test-flow--json-test->plist tests-raw))
+             (summary-raw (test-flow--aget "summary" obj))
+             (summary (test-flow--json-build-summary summary-raw results)))
         (cons summary results))
     (error nil)))
 
-(defun ert-flow--parse-output (out)
-  "Dispatch parsing according to `ert-flow-parser'."
-  (pcase ert-flow-parser
-    ('json (or (ert-flow--parse-json-output out)
+(defun test-flow--parse-output (out)
+  "Dispatch parsing according to `test-flow-parser'."
+  (pcase test-flow-parser
+    ('json (or (test-flow--parse-json-output out)
                (cons '((total . 0) (unexpected . 0) (time . nil)) '())))
-    ('ert-batch (ert-flow--parse-batch-output out))
-    ('auto (or (ert-flow--parse-json-output out)
-               (ert-flow--parse-batch-output out)))
-    (_ (ert-flow--parse-batch-output out))))
+    ('ert-batch (test-flow--parse-batch-output out))
+    ('auto (or (test-flow--parse-json-output out)
+               (test-flow--parse-batch-output out)))
+    (_ (test-flow--parse-batch-output out))))
 
 ;;;; Concurrency and idle management
 
-(defun ert-flow--touch-session (sess)
+(defun test-flow--touch-session (sess)
   "Mark SESS as active just now."
   (when sess
-    (ert-flow--set-last-activity-at sess (current-time))))
+    (test-flow--set-last-activity-at sess (current-time))))
 
-(defun ert-flow--any-watch-enabled-p ()
+(defun test-flow--any-watch-enabled-p ()
   "Return non-nil if any session has watch enabled."
   (let (found)
     (maphash (lambda (_ s)
-               (when (and (not found) (ert-flow--get-watch-enabled s))
+               (when (and (not found) (test-flow--get-watch-enabled s))
                  (setq found t)))
-             ert-flow--sessions)
+             test-flow--sessions)
     found))
 
-(defun ert-flow--ensure-idle-gc-timer ()
+(defun test-flow--ensure-idle-gc-timer ()
   "Ensure the idle GC timer is running when any watch is enabled."
-  (when (and (ert-flow--any-watch-enabled-p)
-             (not (timerp ert-flow--idle-gc-timer)))
-    (setq ert-flow--idle-gc-timer
-          (run-at-time ert-flow-idle-gc-interval
-                       ert-flow-idle-gc-interval
-                       #'ert-flow--idle-gc-tick))))
+  (when (and (test-flow--any-watch-enabled-p)
+             (not (timerp test-flow--idle-gc-timer)))
+    (setq test-flow--idle-gc-timer
+          (run-at-time test-flow-idle-gc-interval
+                       test-flow-idle-gc-interval
+                       #'test-flow--idle-gc-tick))))
 
-(defun ert-flow--cancel-idle-gc-timer-if-unused ()
+(defun test-flow--cancel-idle-gc-timer-if-unused ()
   "Cancel the idle GC timer if no sessions have watch enabled."
-  (unless (ert-flow--any-watch-enabled-p)
-    (when (timerp ert-flow--idle-gc-timer)
-      (cancel-timer ert-flow--idle-gc-timer))
-    (setq ert-flow--idle-gc-timer nil)))
+  (unless (test-flow--any-watch-enabled-p)
+    (when (timerp test-flow--idle-gc-timer)
+      (cancel-timer test-flow--idle-gc-timer))
+    (setq test-flow--idle-gc-timer nil)))
 
-(defun ert-flow--idle-gc-tick ()
+(defun test-flow--idle-gc-tick ()
   "Auto-disable watchers for idle sessions."
   (condition-case err
       (let ((now (current-time)))
         (maphash
          (lambda (_root s)
-           (let ((last (ert-flow--get-last-activity-at s)))
-             (when (and (ert-flow--get-watch-enabled s) last)
+           (let ((last (test-flow--get-last-activity-at s)))
+             (when (and (test-flow--get-watch-enabled s) last)
                (let* ((idle (float-time (time-subtract now last))))
                  (when (and (numberp idle)
-                            (> idle ert-flow-session-idle-seconds))
-                   (ert-flow--set-watch-enabled s nil)
-                   (ert-flow--disable-watch s)
-                   (ert-flow--log "idle-gc: disabled watch for %s after %.1fs"
-                                  (ert-flow--session-root s) idle))))))
-         ert-flow--sessions)
-        (ert-flow--cancel-idle-gc-timer-if-unused))
-    (error (ert-flow--log "idle-gc error: %S" err))))
+                            (> idle test-flow-session-idle-seconds))
+                   (test-flow--set-watch-enabled s nil)
+                   (test-flow--disable-watch s)
+                   (test-flow--log "idle-gc: disabled watch for %s after %.1fs"
+                                   (test-flow--session-root s) idle))))))
+         test-flow--sessions)
+        (test-flow--cancel-idle-gc-timer-if-unused))
+    (error (test-flow--log "idle-gc error: %S" err))))
 
-(defun ert-flow--enqueue-run (label root thunk &optional cmd)
+(defun test-flow--enqueue-run (label root thunk &optional cmd)
   "Enqueue THUNK with LABEL and ROOT (and optional CMD) for later execution."
   (let ((item (list :thunk thunk :label label :root root :cmd cmd)))
-    (setq ert-flow--run-queue (append ert-flow--run-queue (list item)))))
+    (setq test-flow--run-queue (append test-flow--run-queue (list item)))))
 
-(defun ert-flow--dequeue-run ()
+(defun test-flow--dequeue-run ()
   "Dequeue and return next run item plist or nil."
-  (let ((head (car ert-flow--run-queue)))
-    (setq ert-flow--run-queue (cdr ert-flow--run-queue))
+  (let ((head (car test-flow--run-queue)))
+    (setq test-flow--run-queue (cdr test-flow--run-queue))
     head))
 
-(defun ert-flow--log-concurrency-state ()
+(defun test-flow--log-concurrency-state ()
   "Log snapshot of concurrency: active processes and queued items."
-  (when ert-flow-log-enabled
+  (when test-flow-log-enabled
     (let (actives)
       (maphash
        (lambda (_ s)
-         (let ((p (ert-flow--session-process s)))
+         (let ((p (test-flow--session-process s)))
            (when (process-live-p p)
              (push (format "%s label=%s pid=%s cmd=%S"
-                           (ert-flow--session-root s)
-                           (or (process-get p 'ert-flow-label) "-")
+                           (test-flow--session-root s)
+                           (or (process-get p 'test-flow-label) "-")
                            (ignore-errors (process-id p))
-                           (process-get p 'ert-flow-cmd))
+                           (process-get p 'test-flow-cmd))
                    actives))))
-       ert-flow--sessions)
-      (ert-flow--log "state: active=%d queued=%d" ert-flow--active-run-count (length ert-flow--run-queue))
+       test-flow--sessions)
+      (test-flow--log "state: active=%d queued=%d" test-flow--active-run-count (length test-flow--run-queue))
       (when actives
         (dolist (ln (nreverse actives))
-          (ert-flow--log "active: %s" ln)))
-      (when ert-flow--run-queue
+          (test-flow--log "active: %s" ln)))
+      (when test-flow--run-queue
         (let ((i 0))
-          (dolist (item ert-flow--run-queue)
+          (dolist (item test-flow--run-queue)
             (setq i (1+ i))
-            (ert-flow--log "queued[%d]: root=%s label=%s cmd=%S"
-                           i (plist-get item :root) (plist-get item :label) (plist-get item :cmd))))))))
+            (test-flow--log "queued[%d]: root=%s label=%s cmd=%S"
+                            i (plist-get item :root) (plist-get item :label) (plist-get item :cmd))))))))
 
 ;;;###autoload
-(defun ert-flow-dump-concurrency ()
+(defun test-flow-dump-concurrency ()
   "Dump current concurrency state to *Messages*."
   (interactive)
-  (let ((ert-flow-log-enabled t))
-    (ert-flow--log-concurrency-state)))
+  (let ((test-flow-log-enabled t))
+    (test-flow--log-concurrency-state)))
 
-(defun ert-flow--maybe-start-run (sess cmd label)
+(defun test-flow--maybe-start-run (sess cmd label)
   "Start CMD for SESS with LABEL respecting concurrency limit."
-  (let ((root (ert-flow--session-root sess)))
-    (if (>= ert-flow--active-run-count ert-flow-max-concurrent-runs)
+  (let ((root (test-flow--session-root sess)))
+    (if (>= test-flow--active-run-count test-flow-max-concurrent-runs)
         (progn
-          (ert-flow--log "queue: %s (limit %d reached) active=%d queued=%d root=%s"
-                         label ert-flow-max-concurrent-runs
-                         ert-flow--active-run-count
-                         (length ert-flow--run-queue)
-                         root)
-          (ert-flow--enqueue-run label root (lambda () (ert-flow--start-run-internal sess cmd label)) cmd)
-          (ert-flow-open-panel)
-          (with-current-buffer (get-buffer-create (ert-flow--session-panel-name root))
+          (test-flow--log "queue: %s (limit %d reached) active=%d queued=%d root=%s"
+                          label test-flow-max-concurrent-runs
+                          test-flow--active-run-count
+                          (length test-flow--run-queue)
+                          root)
+          (test-flow--enqueue-run label root (lambda () (test-flow--start-run-internal sess cmd label)) cmd)
+          (test-flow-open-panel)
+          (with-current-buffer (get-buffer-create (test-flow--session-panel-name root))
             (let ((inhibit-read-only t))
               (goto-char (point-max))
               (insert (propertize (format "Queued: %s\n" label) 'face 'shadow))))
-          (ert-flow--log-concurrency-state))
-      (cl-incf ert-flow--active-run-count)
-      (ert-flow--log "start: %s active=%d→%d queued=%d root=%s"
-                     label (1- ert-flow--active-run-count) ert-flow--active-run-count
-                     (length ert-flow--run-queue) root)
-      (ert-flow--start-run-internal sess cmd label)
-      (ert-flow--log-concurrency-state))))
+          (test-flow--log-concurrency-state))
+      (cl-incf test-flow--active-run-count)
+      (test-flow--log "start: %s active=%d→%d queued=%d root=%s"
+                      label (1- test-flow--active-run-count) test-flow--active-run-count
+                      (length test-flow--run-queue) root)
+      (test-flow--start-run-internal sess cmd label)
+      (test-flow--log-concurrency-state))))
 
-(defun ert-flow--start-run-internal (sess cmd label)
+(defun test-flow--start-run-internal (sess cmd label)
   "Actually start the external process CMD for SESS, annotating LABEL."
-  (ert-flow--touch-session sess)
-  (let* ((root (ert-flow--session-root sess))
-         (panel (ert-flow--session-panel-name root)))
-    (when (process-live-p (ert-flow--session-process sess))
-      (ert-flow--log "Killing previous process...")
-      (ignore-errors (kill-process (ert-flow--session-process sess))))
-    (ert-flow--set-last-raw-output sess nil)
-    (ert-flow--set-last-stderr-output sess nil)
-    (ert-flow-open-panel)
+  (test-flow--touch-session sess)
+  (let* ((root (test-flow--session-root sess))
+         (panel (test-flow--session-panel-name root)))
+    (when (process-live-p (test-flow--session-process sess))
+      (test-flow--log "Killing previous process...")
+      (ignore-errors (kill-process (test-flow--session-process sess))))
+    (test-flow--set-last-raw-output sess nil)
+    (test-flow--set-last-stderr-output sess nil)
+    (test-flow-open-panel)
     (with-current-buffer (get-buffer-create panel)
       (let ((inhibit-read-only t))
         (goto-char (point-max))
         (insert (propertize (format "Running: %s %S\n" label cmd) 'face 'shadow))))
     (let ((default-directory root))
-      (ert-flow--log "spawn: root=%s cmd=%S label=%s" root cmd label)
-      (let* ((stdout-buf (generate-new-buffer " *ert-flow-stdout*"))
-             (stderr-buf (generate-new-buffer " *ert-flow-stderr*"))
+      (test-flow--log "spawn: root=%s cmd=%S label=%s" root cmd label)
+      (let* ((stdout-buf (generate-new-buffer " *test-flow-stdout*"))
+             (stderr-buf (generate-new-buffer " *test-flow-stderr*"))
              ;; Assign a monotonically increasing run sequence per session to avoid stale overwrites
-             (seq (1+ (or (ert-flow--conf sess 'run-seq 0) 0))))
-        (ert-flow--set-conf sess 'run-seq seq)
+             (seq (1+ (or (test-flow--conf sess 'run-seq 0) 0))))
+        (test-flow--set-conf sess 'run-seq seq)
         (let* ((p (make-process
-                   :name "ert-flow-runner"
+                   :name "test-flow-runner"
                    :command cmd
                    :noquery t
                    :buffer stdout-buf
                    :connection-type 'pipe
-                   :sentinel #'ert-flow--proc-sentinel
+                   :sentinel #'test-flow--proc-sentinel
                    :stderr stderr-buf)))
-          (process-put p 'ert-flow-session sess)
-          (process-put p 'ert-flow-stdout-buf stdout-buf)
-          (process-put p 'ert-flow-stderr-buf stderr-buf)
-          (process-put p 'ert-flow-label label)
-          (process-put p 'ert-flow-root root)
-          (process-put p 'ert-flow-cmd cmd)
-          (process-put p 'ert-flow-run-seq seq)
-          (ert-flow--set-process sess p)
+          (process-put p 'test-flow-session sess)
+          (process-put p 'test-flow-stdout-buf stdout-buf)
+          (process-put p 'test-flow-stderr-buf stderr-buf)
+          (process-put p 'test-flow-label label)
+          (process-put p 'test-flow-root root)
+          (process-put p 'test-flow-cmd cmd)
+          (process-put p 'test-flow-run-seq seq)
+          (test-flow--set-process sess p)
           ;; legacy global for compatibility
-          (setq ert-flow--process p)
-          (ert-flow--log-concurrency-state))))))
+          (setq test-flow--process p)
+          (test-flow--log-concurrency-state))))))
 
 ;;;; Internal run finish and in-Emacs runner
 
-(defun ert-flow--finish-run ()
+(defun test-flow--finish-run ()
   "Bookkeeping after a run finishes: free a slot and start next queued run."
-  (when (> ert-flow--active-run-count 0)
-    (cl-decf ert-flow--active-run-count))
-  (ert-flow--log "finish: freed slot → active=%d queued=%d" ert-flow--active-run-count (length ert-flow--run-queue))
-  (let ((next (ert-flow--dequeue-run)))
+  (when (> test-flow--active-run-count 0)
+    (cl-decf test-flow--active-run-count))
+  (test-flow--log "finish: freed slot → active=%d queued=%d" test-flow--active-run-count (length test-flow--run-queue))
+  (let ((next (test-flow--dequeue-run)))
     (when next
-      (cl-incf ert-flow--active-run-count)
-      (ert-flow--log "dequeue: start %s active=%d queued=%d root=%s"
-                     (or (plist-get next :label) "?")
-                     ert-flow--active-run-count
-                     (length ert-flow--run-queue)
-                     (or (plist-get next :root) "?"))
+      (cl-incf test-flow--active-run-count)
+      (test-flow--log "dequeue: start %s active=%d queued=%d root=%s"
+                      (or (plist-get next :label) "?")
+                      test-flow--active-run-count
+                      (length test-flow--run-queue)
+                      (or (plist-get next :root) "?"))
       (funcall (plist-get next :thunk))))
-  (ert-flow--log-concurrency-state))
+  (test-flow--log-concurrency-state))
 
-(defun ert-flow--maybe-start-thunk (sess label thunk)
+(defun test-flow--maybe-start-thunk (sess label thunk)
   "Start THUNK respecting concurrency for SESS and LABEL."
-  (let ((root (ert-flow--session-root sess)))
-    (if (>= ert-flow--active-run-count ert-flow-max-concurrent-runs)
+  (let ((root (test-flow--session-root sess)))
+    (if (>= test-flow--active-run-count test-flow-max-concurrent-runs)
         (progn
-          (ert-flow--log "queue(thunk): %s (limit %d reached) active=%d queued=%d root=%s"
-                         label ert-flow-max-concurrent-runs
-                         ert-flow--active-run-count
-                         (length ert-flow--run-queue) root)
-          (ert-flow--enqueue-run label root thunk nil)
-          (ert-flow-open-panel)
-          (with-current-buffer (get-buffer-create (ert-flow--session-panel-name root))
+          (test-flow--log "queue(thunk): %s (limit %d reached) active=%d queued=%d root=%s"
+                          label test-flow-max-concurrent-runs
+                          test-flow--active-run-count
+                          (length test-flow--run-queue) root)
+          (test-flow--enqueue-run label root thunk nil)
+          (test-flow-open-panel)
+          (with-current-buffer (get-buffer-create (test-flow--session-panel-name root))
             (let ((inhibit-read-only t))
               (goto-char (point-max))
               (insert (propertize (format "Queued: %s\n" label) 'face 'shadow))))
-          (ert-flow--log-concurrency-state))
-      (cl-incf ert-flow--active-run-count)
-      (ert-flow--log "start(thunk): %s active=%d→%d queued=%d root=%s"
-                     label (1- ert-flow--active-run-count) ert-flow--active-run-count
-                     (length ert-flow--run-queue) root)
+          (test-flow--log-concurrency-state))
+      (cl-incf test-flow--active-run-count)
+      (test-flow--log "start(thunk): %s active=%d→%d queued=%d root=%s"
+                      label (1- test-flow--active-run-count) test-flow--active-run-count
+                      (length test-flow--run-queue) root)
       (funcall thunk)
-      (ert-flow--log-concurrency-state))))
+      (test-flow--log-concurrency-state))))
 
-(defun ert-flow--selector-names (names)
+(defun test-flow--selector-names (names)
   "Return an ERT selector predicate that matches tests by NAMES (list of strings)."
   (lambda (test)
     (let* ((sym (ert-test-name test))
@@ -923,7 +923,7 @@ Defensive parsing: accepts vectors or lists for arrays, tolerates missing keys."
 
 ;; In-Emacs runner helpers (enrichment without relying on batch parsing only)
 
-(defun ert-flow--test-by-name (name)
+(defun test-flow--test-by-name (name)
   "Return ERT test object by NAME (string), or nil."
   (condition-case _err
       (let ((sym (intern-soft name)))
@@ -931,7 +931,7 @@ Defensive parsing: accepts vectors or lists for arrays, tolerates missing keys."
           (ert-get-test sym)))
     (error nil)))
 
-(defun ert-flow--result-enrich-from-test (r test)
+(defun test-flow--result-enrich-from-test (r test)
   "Return a copy of result plist R enriched with TEST metadata (file/line/tags)."
   (let ((res (copy-sequence r)))
     (when test
@@ -953,14 +953,14 @@ Defensive parsing: accepts vectors or lists for arrays, tolerates missing keys."
         (error nil)))
     res))
 
-(defun ert-flow--enrich-results-with-tests (results)
+(defun test-flow--enrich-results-with-tests (results)
   "Enrich RESULTS list of plists with per-test metadata from loaded ERT tests."
   (mapcar (lambda (r)
-            (let ((tobj (ert-flow--test-by-name (plist-get r :name))))
-              (ert-flow--result-enrich-from-test r tobj)))
+            (let ((tobj (test-flow--test-by-name (plist-get r :name))))
+              (test-flow--result-enrich-from-test r tobj)))
           results))
 
-(defun ert-flow--summary-ensure-duration (summary start-time end-time)
+(defun test-flow--summary-ensure-duration (summary start-time end-time)
   "Ensure SUMMARY alist has numeric duration in milliseconds using START-TIME/END-TIME."
   (let* ((dur-ms (alist-get 'duration-ms summary)))
     (if (numberp dur-ms)
@@ -972,8 +972,8 @@ Defensive parsing: accepts vectors or lists for arrays, tolerates missing keys."
             (progn (setcdr cell ms) summary)
           (cons (cons 'duration-ms ms) summary))))))
 
-(defun ert-flow--status-from-ert-result (result)
-  "Map ERT RESULT object to ert-flow status symbol."
+(defun test-flow--status-from-ert-result (result)
+  "Map ERT RESULT object to test-flow status symbol."
   (condition-case _e
       (pcase (and (fboundp 'ert-test-result-type)
                   (ert-test-result-type result))
@@ -984,7 +984,7 @@ Defensive parsing: accepts vectors or lists for arrays, tolerates missing keys."
         (_ 'error))
     (error 'error)))
 
-(defun ert-flow--pp-backtrace (bt)
+(defun test-flow--pp-backtrace (bt)
   "Pretty-print ERT backtrace object BT into a readable multi-line string.
 
 Accepts:
@@ -1013,35 +1013,35 @@ Falls back to `format' with %S if the structure is unknown."
        "\n")))
    (t (format "%S" bt))))
 
-(defun ert-flow--details-from-ert-result (result)
+(defun test-flow--details-from-ert-result (result)
   "Build a human-readable DETAILS string from ERT RESULT.
 Includes condition and best-effort backtrace when available."
   (let ((details ""))
     (condition-case _e
         (when (and (fboundp 'ert-test-result-with-condition-condition)
-                   (memq (ert-flow--status-from-ert-result result) '(fail error)))
+                   (memq (test-flow--status-from-ert-result result) '(fail error)))
           (let* ((cond (ert-test-result-with-condition-condition result))
                  (cond-str (format "Condition: %S" cond)))
             (setq details (concat details cond-str "\n"))))
       (error nil))
     (condition-case _e
         (when (and (fboundp 'ert-test-result-with-condition-backtrace)
-                   (memq (ert-flow--status-from-ert-result result) '(fail error)))
+                   (memq (test-flow--status-from-ert-result result) '(fail error)))
           (let ((bt (ert-test-result-with-condition-backtrace result)))
             (setq details
                   (concat details
                           "Backtrace:\n"
-                          (ert-flow--pp-backtrace bt)
+                          (test-flow--pp-backtrace bt)
                           "\n"))))
       (error nil))
     (string-trim-right details)))
 
-(defun ert-flow--result-from-ert (test result duration-ms)
-  "Construct an ert-flow result plist from ERT TEST, RESULT and DURATION-MS."
+(defun test-flow--result-from-ert (test result duration-ms)
+  "Construct an test-flow result plist from ERT TEST, RESULT and DURATION-MS."
   (let* ((sym (ert-test-name test))
          (name (if (symbolp sym) (symbol-name sym) (format "%s" sym)))
-         (status (ert-flow--status-from-ert-result result))
-         (details (ert-flow--details-from-ert-result result))
+         (status (test-flow--status-from-ert-result result))
+         (details (test-flow--details-from-ert-result result))
          (msg (if (and (stringp details) (> (length details) 0))
                   (car (split-string details "\n" t))
                 (symbol-name status)))
@@ -1064,13 +1064,13 @@ Includes condition and best-effort backtrace when available."
           :status status
           :message msg
           :details (or details "")
-          :suite (ert-flow--suite-of name)
+          :suite (test-flow--suite-of name)
           :file file
           :line line
           :tags tags
           :duration-ms (and (integerp duration-ms) duration-ms))))
 
-(defun ert-flow--build-summary-from-results (results total-ms)
+(defun test-flow--build-summary-from-results (results total-ms)
   "Compute a SUMMARY alist from RESULTS and TOTAL-MS duration."
   (let* ((total (length results))
          (p (cl-count-if (lambda (r) (eq (plist-get r :status) 'pass)) results))
@@ -1084,7 +1084,7 @@ Includes condition and best-effort backtrace when available."
       (duration-ms . ,(and (integerp total-ms) total-ms))
       (passed . ,p) (failed . ,f) (error . ,e) (skipped . ,s))))
 
-(defun ert-flow--collect-in-emacs-results (selector)
+(defun test-flow--collect-in-emacs-results (selector)
   "Run tests matching SELECTOR and return (SUMMARY . RESULTS).
 
 This avoids parsing textual ERT output by inspecting result objects."
@@ -1095,131 +1095,131 @@ This avoids parsing textual ERT output by inspecting result objects."
       (let* ((start (current-time))
              (res (ert-run-test tobj))
              (elapsed (truncate (* 1000 (max 0.0 (float-time (time-subtract (current-time) start))))))
-             (one (ert-flow--result-from-ert tobj res elapsed)))
+             (one (test-flow--result-from-ert tobj res elapsed)))
         (push one results)))
     (let* ((total-ms (truncate (* 1000 (max 0.0 (float-time (time-subtract (current-time) suite-start))))))
            (results* (nreverse results))
-           (summary (ert-flow--build-summary-from-results results* total-ms)))
+           (summary (test-flow--build-summary-from-results results* total-ms)))
       (cons summary results*))))
 
-(defun ert-flow--start-in-emacs (sess selector label)
+(defun test-flow--start-in-emacs (sess selector label)
   "Run ERT SELECTOR inside Emacs, update SESS, and re-render panel. LABEL is informational.
 
 Uses in-process ERT result objects (no text parsing) to gather precise
 status, file/line, tags and backtraces."
   (unwind-protect
-      (let* ((root (ert-flow--session-root sess))
-             (panel (ert-flow--session-panel-name root))
-             (pair (ert-flow--collect-in-emacs-results selector))
+      (let* ((root (test-flow--session-root sess))
+             (panel (test-flow--session-panel-name root))
+             (pair (test-flow--collect-in-emacs-results selector))
              (summary (car pair))
              (results (cdr pair)))
         ;; Store into session and legacy globals
-        (ert-flow--set-last-summary sess summary)
-        (ert-flow--set-last-results sess results)
-        (ert-flow--set-last-raw-output sess nil)
-        (setq ert-flow--last-summary summary
-              ert-flow--last-results results
-              ert-flow--last-raw-output nil)
-        (let ((ert-flow--panel-buffer-name panel))
-          (ert-flow--render)))
-    (ert-flow--finish-run)))
+        (test-flow--set-last-summary sess summary)
+        (test-flow--set-last-results sess results)
+        (test-flow--set-last-raw-output sess nil)
+        (setq test-flow--last-summary summary
+              test-flow--last-results results
+              test-flow--last-raw-output nil)
+        (let ((test-flow--panel-buffer-name panel))
+          (test-flow--render)))
+    (test-flow--finish-run)))
 
 ;;;; Rendering
 
-(defvar ert-flow-panel-mode-map
+(defvar test-flow-panel-mode-map
   (let ((map (make-sparse-keymap)))
-    (define-key map (kbd "g") #'ert-flow-run)
-    (define-key map (kbd "r") #'ert-flow-run)
-    (define-key map (kbd "f") #'ert-flow-run-failed)
-    (define-key map (kbd "w") #'ert-flow-toggle-watch)
-    (define-key map (kbd "d") #'ert-flow-detect-runner)
-    (define-key map (kbd "c") #'ert-flow-copy-failures)
-    (define-key map (kbd "x") #'ert-flow-clear)
-    (define-key map (kbd "o") #'ert-flow-goto-definition-at-point)
-    (define-key map (kbd "RET") #'ert-flow-open-details-at-point)
-    (define-key map (kbd "TAB") #'ert-flow-tab)
-    (define-key map (kbd "<backtab>") #'ert-flow-toggle-all-groups)
+    (define-key map (kbd "g") #'test-flow-run)
+    (define-key map (kbd "r") #'test-flow-run)
+    (define-key map (kbd "f") #'test-flow-run-failed)
+    (define-key map (kbd "w") #'test-flow-toggle-watch)
+    (define-key map (kbd "d") #'test-flow-detect-runner)
+    (define-key map (kbd "c") #'test-flow-copy-failures)
+    (define-key map (kbd "x") #'test-flow-clear)
+    (define-key map (kbd "o") #'test-flow-goto-definition-at-point)
+    (define-key map (kbd "RET") #'test-flow-open-details-at-point)
+    (define-key map (kbd "TAB") #'test-flow-tab)
+    (define-key map (kbd "<backtab>") #'test-flow-toggle-all-groups)
     ;; Navigation
-    (define-key map (kbd "n") #'ert-flow-next-item)
-    (define-key map (kbd "p") #'ert-flow-previous-item)
+    (define-key map (kbd "n") #'test-flow-next-item)
+    (define-key map (kbd "p") #'test-flow-previous-item)
     ;; Additional vim-like navigation
-    (define-key map (kbd "j") #'ert-flow-next-item)
-    (define-key map (kbd "k") #'ert-flow-previous-item)
+    (define-key map (kbd "j") #'test-flow-next-item)
+    (define-key map (kbd "k") #'test-flow-previous-item)
     ;; Panel filters
-    (define-key map (kbd "P") #'ert-flow-panel-filter-pass)
-    (define-key map (kbd "F") #'ert-flow-panel-filter-fail)
-    (define-key map (kbd "E") #'ert-flow-panel-filter-error)
-    (define-key map (kbd "S") #'ert-flow-panel-filter-skip)
-    (define-key map (kbd "A") #'ert-flow-panel-filter-all)
-    (define-key map (kbd "/") #'ert-flow-panel-set-name-filter)
-    (define-key map (kbd "T") #'ert-flow-panel-set-tags-filter)
-    (define-key map (kbd "C") #'ert-flow-panel-filter-clear)
+    (define-key map (kbd "P") #'test-flow-panel-filter-pass)
+    (define-key map (kbd "F") #'test-flow-panel-filter-fail)
+    (define-key map (kbd "E") #'test-flow-panel-filter-error)
+    (define-key map (kbd "S") #'test-flow-panel-filter-skip)
+    (define-key map (kbd "A") #'test-flow-panel-filter-all)
+    (define-key map (kbd "/") #'test-flow-panel-set-name-filter)
+    (define-key map (kbd "T") #'test-flow-panel-set-tags-filter)
+    (define-key map (kbd "C") #'test-flow-panel-filter-clear)
     map)
-  "Keymap for `ert-flow-panel-mode'.")
+  "Keymap for `test-flow-panel-mode'.")
 
-(define-derived-mode ert-flow-panel-mode special-mode "ert-flow_panel"
+(define-derived-mode test-flow-panel-mode special-mode "test-flow_panel"
   "Major mode for displaying ERT results in a side panel."
   (setq buffer-read-only t
         truncate-lines t)
   ;; Buffer-local fold state for suite groups
-  (setq-local ert-flow--folded-suites (or ert-flow--folded-suites
-                                          (make-hash-table :test 'equal)))
+  (setq-local test-flow--folded-suites (or test-flow--folded-suites
+                                           (make-hash-table :test 'equal)))
   ;; Ensure header-line module is loaded, then apply controls if enabled.
-  (ignore-errors (require 'ert-flow-headerline nil t))
-  (when (and (boundp 'ert-flow-view-headerline-enable)
-             ert-flow-view-headerline-enable
-             (fboundp 'ert-flow-headerline--apply))
-    (ert-flow-headerline--apply (current-buffer)))
-  (when (fboundp 'ert-flow-view-controls--ensure-headerline-face)
-    (ignore-errors (ert-flow-view-controls--ensure-headerline-face))))
+  (ignore-errors (require 'test-flow-headerline nil t))
+  (when (and (boundp 'test-flow-view-headerline-enable)
+             test-flow-view-headerline-enable
+             (fboundp 'test-flow-headerline--apply))
+    (test-flow-headerline--apply (current-buffer)))
+  (when (fboundp 'test-flow-view-controls--ensure-headerline-face)
+    (ignore-errors (test-flow-view-controls--ensure-headerline-face))))
 
 ;; Override button TAB behavior: fold/unfold instead of jumping
-(defvar ert-flow--suite-button-map
+(defvar test-flow--suite-button-map
   (let ((map (make-sparse-keymap)))
     (set-keymap-parent map button-map)
-    (define-key map (kbd "TAB") #'ert-flow-toggle-group-at-point)
-    (define-key map [tab] #'ert-flow-toggle-group-at-point)
-    (define-key map (kbd "<tab>") #'ert-flow-toggle-group-at-point)
-    (define-key map (kbd "<backtab>") #'ert-flow-toggle-all-groups)
+    (define-key map (kbd "TAB") #'test-flow-toggle-group-at-point)
+    (define-key map [tab] #'test-flow-toggle-group-at-point)
+    (define-key map (kbd "<tab>") #'test-flow-toggle-group-at-point)
+    (define-key map (kbd "<backtab>") #'test-flow-toggle-all-groups)
     ;; Allow navigation keys to work even when point is on a button
-    (define-key map (kbd "n") #'ert-flow-next-item)
-    (define-key map (kbd "p") #'ert-flow-previous-item)
-    (define-key map (kbd "j") #'ert-flow-next-item)
-    (define-key map (kbd "k") #'ert-flow-previous-item)
+    (define-key map (kbd "n") #'test-flow-next-item)
+    (define-key map (kbd "p") #'test-flow-previous-item)
+    (define-key map (kbd "j") #'test-flow-next-item)
+    (define-key map (kbd "k") #'test-flow-previous-item)
     map)
   "Keymap for suite heading buttons that makes TAB fold/unfold instead of moving.")
 
-(defvar ert-flow--status-button-map
+(defvar test-flow--status-button-map
   (let ((map (make-sparse-keymap)))
     (set-keymap-parent map button-map)
     ;; TAB toggles Status fold/unfold
-    (define-key map (kbd "TAB") #'ert-flow-toggle-status)
-    (define-key map [tab] #'ert-flow-toggle-status)
-    (define-key map (kbd "<tab>") #'ert-flow-toggle-status)
+    (define-key map (kbd "TAB") #'test-flow-toggle-status)
+    (define-key map [tab] #'test-flow-toggle-status)
+    (define-key map (kbd "<tab>") #'test-flow-toggle-status)
     ;; Navigation passthrough
-    (define-key map (kbd "n") #'ert-flow-next-item)
-    (define-key map (kbd "p") #'ert-flow-previous-item)
-    (define-key map (kbd "j") #'ert-flow-next-item)
-    (define-key map (kbd "k") #'ert-flow-previous-item)
+    (define-key map (kbd "n") #'test-flow-next-item)
+    (define-key map (kbd "p") #'test-flow-previous-item)
+    (define-key map (kbd "j") #'test-flow-next-item)
+    (define-key map (kbd "k") #'test-flow-previous-item)
     map)
   "Keymap for Status heading (TAB folds/unfolds, mouse-1 toggles).")
 
-(defvar ert-flow--toolbar-button-map
+(defvar test-flow--toolbar-button-map
   (let ((map (make-sparse-keymap())))
     (set-keymap-parent map button-map)
-    (define-key map (kbd "TAB") #'ert-flow-toggle-group-at-point)
-    (define-key map [tab] #'ert-flow-toggle-group-at-point)
-    (define-key map (kbd "<tab>") #'ert-flow-toggle-group-at-point)
-    (define-key map (kbd "<backtab>") #'ert-flow-toggle-all-groups)
+    (define-key map (kbd "TAB") #'test-flow-toggle-group-at-point)
+    (define-key map [tab] #'test-flow-toggle-group-at-point)
+    (define-key map (kbd "<tab>") #'test-flow-toggle-group-at-point)
+    (define-key map (kbd "<backtab>") #'test-flow-toggle-all-groups)
     ;; Allow navigation keys to work even when point is on a button
-    (define-key map (kbd "n") #'ert-flow-next-item)
-    (define-key map (kbd "p") #'ert-flow-previous-item)
-    (define-key map (kbd "j") #'ert-flow-next-item)
-    (define-key map (kbd "k") #'ert-flow-previous-item)
+    (define-key map (kbd "n") #'test-flow-next-item)
+    (define-key map (kbd "p") #'test-flow-previous-item)
+    (define-key map (kbd "j") #'test-flow-next-item)
+    (define-key map (kbd "k") #'test-flow-previous-item)
     map)
   "Keymap for toolbar buttons that makes TAB fold/unfold the nearest group.")
 
-(defun ert-flow--open-panel--maybe-autodetect (sess root runner ext-cmd)
+(defun test-flow--open-panel--maybe-autodetect (sess root runner ext-cmd)
   "Return (ext-cmd . auto-did-detect) after optional auto-detect for SESS at ROOT."
   (let* ((auto-did-detect nil)
          (root* (file-name-as-directory root))
@@ -1241,96 +1241,96 @@ status, file/line, tags and backtraces."
                         (stringp list-cmd-path)
                         (file-name-absolute-p list-cmd-path)
                         (not (string-prefix-p root* (file-name-directory list-cmd-path))))))
-    (when (and ert-flow-auto-detect-on-open
+    (when (and test-flow-auto-detect-on-open
                (eq runner 'external-command)
                (or (not ext-cmd) mismatch))
       (let ((found (funcall local-run-tests)))
         (when found
-          (ert-flow--set-conf sess 'external-command (list "emacs" "-Q" "--batch" "-l" found))
-          (setq ext-cmd (ert-flow--conf sess 'external-command ert-flow-external-command))
+          (test-flow--set-conf sess 'external-command (list "emacs" "-Q" "--batch" "-l" found))
+          (setq ext-cmd (test-flow--conf sess 'external-command test-flow-external-command))
           (setq auto-did-detect t)
-          (ert-flow--log (if mismatch
-                             "auto-detect: replaced alien external cmd with %s"
-                           "auto-detect: set external cmd to %s")
-                         (if (string-match-p "/test[s]?/run-tests\\.el\\'" found)
-                             (file-relative-name found root*)
-                           found)))))
+          (test-flow--log (if mismatch
+                              "auto-detect: replaced alien external cmd with %s"
+                            "auto-detect: set external cmd to %s")
+                          (if (string-match-p "/test[s]?/run-tests\\.el\\'" found)
+                              (file-relative-name found root*)
+                            found)))))
     (cons ext-cmd auto-did-detect)))
 
-(defun ert-flow--open-panel--display (sess root &optional select)
+(defun test-flow--open-panel--display (sess root &optional select)
   "Display panel window for SESS at ROOT and render.
 When SELECT is non-nil, focus the panel window; otherwise do not steal focus."
-  (let* ((bufname (ert-flow--session-panel-name root))
+  (let* ((bufname (test-flow--session-panel-name root))
          (buf (get-buffer-create bufname))
          (win (display-buffer-in-side-window
                buf
-               `((side . ,(ert-flow--conf sess 'panel-side ert-flow-panel-side))
-                 (window-width . ,(ert-flow--conf sess 'panel-width ert-flow-panel-width))))))
-    (ert-flow--touch-session sess)
+               `((side . ,(test-flow--conf sess 'panel-side test-flow-panel-side))
+                 (window-width . ,(test-flow--conf sess 'panel-width test-flow-panel-width))))))
+    (test-flow--touch-session sess)
     (with-current-buffer buf
       ;; Ensure the panel buffer is rooted at the project for reliable fallbacks
       (setq default-directory (file-name-as-directory root))
-      (ert-flow-panel-mode)
-      (let ((ert-flow--panel-buffer-name bufname))
-        (ert-flow--render)))
+      (test-flow-panel-mode)
+      (let ((test-flow--panel-buffer-name bufname))
+        (test-flow--render)))
     (when select
       (select-window win))))
 
-(defun ert-flow--open-panel--maybe-first-run (sess runner ext-cmd auto-did-detect)
+(defun test-flow--open-panel--maybe-first-run (sess runner ext-cmd auto-did-detect)
   "Maybe trigger first run for SESS based on RUNNER, EXT-CMD and AUTO-DID-DETECT."
-  (let* ((root (ert-flow--session-root sess))
-         (norm (and ext-cmd (ert-flow--normalize-command ext-cmd))))
-    (when (and ert-flow-run-on-open
-               (not (ert-flow--conf sess 'first-open-run-done nil))
-               (null (ert-flow--session-last-results sess)))
+  (let* ((root (test-flow--session-root sess))
+         (norm (and ext-cmd (test-flow--normalize-command ext-cmd))))
+    (when (and test-flow-run-on-open
+               (not (test-flow--conf sess 'first-open-run-done nil))
+               (null (test-flow--session-last-results sess)))
       (cond
        ((eq runner 'in-emacs-ert)
-        (ert-flow--set-conf sess 'first-open-run-done t)
-        (ert-flow--log "first-open-run: in-emacs (root=%s)" root)
-        (ert-flow-run))
+        (test-flow--set-conf sess 'first-open-run-done t)
+        (test-flow--log "first-open-run: in-emacs (root=%s)" root)
+        (test-flow-run))
        ((and (eq runner 'external-command) norm)
-        (ert-flow--set-conf sess 'first-open-run-done t)
-        (ert-flow--log "first-open-run: external (root=%s cmd=%S)" root norm)
-        (ert-flow-run))
+        (test-flow--set-conf sess 'first-open-run-done t)
+        (test-flow--log "first-open-run: external (root=%s cmd=%S)" root norm)
+        (test-flow-run))
        (auto-did-detect
-        (ert-flow--set-conf sess 'first-open-run-done t)
-        (ert-flow--log "first-open-run: external (auto-detected) (root=%s)" root)
-        (ert-flow-run))
+        (test-flow--set-conf sess 'first-open-run-done t)
+        (test-flow--log "first-open-run: external (auto-detected) (root=%s)" root)
+        (test-flow-run))
        (t
-        (ert-flow--log "first-open-run: skipped (root=%s) reason=%s"
-                       root
-                       (cond
-                        ((and (eq runner 'external-command) (not norm)) "no external command")
-                        (t "unknown"))))))))
+        (test-flow--log "first-open-run: skipped (root=%s) reason=%s"
+                        root
+                        (cond
+                         ((and (eq runner 'external-command) (not norm)) "no external command")
+                         (t "unknown"))))))))
 
 ;;;###autoload
-(defun ert-flow-open-panel ()
-  "Open or focus the ert-flow panel (session-aware)."
+(defun test-flow-open-panel ()
+  "Open or focus the test-flow panel (session-aware)."
   (interactive)
-  (let* ((root (ert-flow--project-root))
-         (sess (ert-flow--get-session root))
-         (runner (ert-flow--conf sess 'runner ert-flow-runner))
-         (ext-cmd (ert-flow--conf sess 'external-command ert-flow-external-command)))
-    (pcase-let ((`(,ext-cmd* . ,auto-did) (ert-flow--open-panel--maybe-autodetect sess root runner ext-cmd)))
-      (ert-flow--log "open-panel: root=%s name=%s runner=%s parser=%s log=%s ext=%S auto-detected=%s panel=%s | %s | %s"
-                     root
-                     (funcall ert-flow-session-naming-function root)
-                     runner
-                     (ert-flow--conf sess 'parser ert-flow-parser)
-                     (if ert-flow-log-enabled "on" "off")
-                     ext-cmd*
-                     auto-did
-                     (ert-flow--session-panel-name root)
-                     (ert-flow--dbg-sess sess)
-                     (ert-flow--dbg-conf sess))
-      (ert-flow--open-panel--display sess root (called-interactively-p 'interactive))
-      (ert-flow--open-panel--maybe-first-run sess runner ext-cmd* auto-did))))
+  (let* ((root (test-flow--project-root))
+         (sess (test-flow--get-session root))
+         (runner (test-flow--conf sess 'runner test-flow-runner))
+         (ext-cmd (test-flow--conf sess 'external-command test-flow-external-command)))
+    (pcase-let ((`(,ext-cmd* . ,auto-did) (test-flow--open-panel--maybe-autodetect sess root runner ext-cmd)))
+      (test-flow--log "open-panel: root=%s name=%s runner=%s parser=%s log=%s ext=%S auto-detected=%s panel=%s | %s | %s"
+                      root
+                      (funcall test-flow-session-naming-function root)
+                      runner
+                      (test-flow--conf sess 'parser test-flow-parser)
+                      (if test-flow-log-enabled "on" "off")
+                      ext-cmd*
+                      auto-did
+                      (test-flow--session-panel-name root)
+                      (test-flow--dbg-sess sess)
+                      (test-flow--dbg-conf sess))
+      (test-flow--open-panel--display sess root (called-interactively-p 'interactive))
+      (test-flow--open-panel--maybe-first-run sess runner ext-cmd* auto-did))))
 
-(defun ert-flow--propertize (text result)
+(defun test-flow--propertize (text result)
   "Return TEXT with RESULT stored as a text property."
-  (propertize text 'ert-flow--result result))
+  (propertize text 'test-flow--result result))
 
-(defun ert-flow--toolbar-icon (key face &optional _alt)
+(defun test-flow--toolbar-icon (key face &optional _alt)
   "Return a compact icon string for toolbar KEY using FACE.
 
 This implementation uses simple Unicode/emoji so it works everywhere
@@ -1350,9 +1350,9 @@ watch-off, copy, clear, detect, goto."
            (_           "•"))))
     (propertize glyph 'face face)))
 
-(defun ert-flow--insert-toolbar-button (key face cmd icon-alt help)
+(defun test-flow--insert-toolbar-button (key face cmd icon-alt help)
   "Insert a single toolbar button with KEY, FACE, CMD, ICON-ALT and HELP."
-  (let* ((icon (ert-flow--toolbar-icon key face icon-alt))
+  (let* ((icon (test-flow--toolbar-icon key face icon-alt))
          (text (format " %s " icon)))
     (insert-text-button
      text
@@ -1360,10 +1360,10 @@ watch-off, copy, clear, detect, goto."
      'mouse-face 'highlight
      'help-echo help
      'follow-link t
-     'keymap ert-flow--toolbar-button-map
+     'keymap test-flow--toolbar-button-map
      'action (lambda (_btn) (call-interactively cmd)))))
 
-(defun ert-flow--run-failed-help (runner ext-cmd failed-fn)
+(defun test-flow--run-failed-help (runner ext-cmd failed-fn)
   "Return help text for the Run Failed button given RUNNER, EXT-CMD and FAILED-FN."
   (if (eq runner 'in-emacs-ert)
       "Run failed tests in-Emacs (ERT selector) (f)"
@@ -1371,40 +1371,40 @@ watch-off, copy, clear, detect, goto."
         "Run failed tests (external argv via failed-args) (f)"
       "Run failed tests (falls back to all) (f)")))
 
-(defun ert-flow--watch-icon (on)
+(defun test-flow--watch-icon (on)
   "Return watch icon based on ON."
   (if on "🙈" "👁"))
 
 ;; Toolbar is now obsolete (panel controls in header-line), this is a no-op.
-(defun ert-flow--insert-toolbar (_sess) ())
+(defun test-flow--insert-toolbar (_sess) ())
 
-(defun ert-flow--find-panel-session ()
+(defun test-flow--find-panel-session ()
   "Return session object for the current panel buffer.
 
 Prefer the actual buffer name (panel buffer) to resolve the session.
-Do not rely on global `ert-flow--panel-buffer-name' outside render-time."
+Do not rely on global `test-flow--panel-buffer-name' outside render-time."
   (let* ((panel-name
-          (or (and (eq major-mode 'ert-flow-panel-mode) (buffer-name))
-              (and (stringp ert-flow--panel-buffer-name) ert-flow--panel-buffer-name)
+          (or (and (eq major-mode 'test-flow-panel-mode) (buffer-name))
+              (and (stringp test-flow--panel-buffer-name) test-flow--panel-buffer-name)
               (buffer-name)))
          (found nil))
     (maphash
      (lambda (_root s)
        (when (and (not found)
-                  (string= (ert-flow--session-panel-buf-name s) panel-name))
+                  (string= (test-flow--session-panel-buf-name s) panel-name))
          (setq found s)))
-     ert-flow--sessions)
+     test-flow--sessions)
     (if found
-        (ert-flow--log "find-panel-session: panel=%s -> root=%s" panel-name (ert-flow--session-root found))
-      (ert-flow--log "find-panel-session: panel=%s not found; fallback to root=%s"
-                     panel-name (ert-flow--project-root)))
-    (or found (ert-flow--get-session (ert-flow--project-root)))))
+        (test-flow--log "find-panel-session: panel=%s -> root=%s" panel-name (test-flow--session-root found))
+      (test-flow--log "find-panel-session: panel=%s not found; fallback to root=%s"
+                      panel-name (test-flow--project-root)))
+    (or found (test-flow--get-session (test-flow--project-root)))))
 
-(defun ert-flow--insert-header_line (_sess)
+(defun test-flow--insert-header_line (_sess)
   "Header-line hosts controls; nothing to insert here now."
   (ignore _sess))
 
-(defun ert-flow--summary-counters (sum results)
+(defun test-flow--summary-counters (sum results)
   "Compute counters and duration fields from SUM/RESULTS."
   (let* ((total (or (alist-get 'total sum) 0))
          (unexpected (or (alist-get 'unexpected sum) 0))
@@ -1426,95 +1426,95 @@ Do not rely on global `ert-flow--panel-buffer-name' outside render-time."
           :dur-str dur-str)))
 
 ;; summary is now in status-block, do nothing
-(defun ert-flow--insert-summary-line (_sum _results) ())
+(defun test-flow--insert-summary-line (_sum _results) ())
 
-(defun ert-flow--apply-panel-filters (results)
+(defun test-flow--apply-panel-filters (results)
   "Apply panel-local filters to RESULTS and return a filtered list.
 
 Respects:
-- `ert-flow--panel-status-filter' — list of allowed statuses or nil (all)
-- `ert-flow--panel-name-regexp'   — regexp for name match or nil (no filter)
-- `ert-flow--panel-tags-filter'   — list of tags (strings); test passes if any tag matches"
+- `test-flow--panel-status-filter' — list of allowed statuses or nil (all)
+- `test-flow--panel-name-regexp'   — regexp for name match or nil (no filter)
+- `test-flow--panel-tags-filter'   — list of tags (strings); test passes if any tag matches"
   (let ((rs (or results '())))
-    ;; Only apply filters inside an ert-flow panel buffer
-    (if (not (eq major-mode 'ert-flow-panel-mode))
+    ;; Only apply filters inside an test-flow panel buffer
+    (if (not (eq major-mode 'test-flow-panel-mode))
         rs
       ;; status filter
-      (when (and (boundp 'ert-flow--panel-status-filter)
-                 ert-flow--panel-status-filter)
+      (when (and (boundp 'test-flow--panel-status-filter)
+                 test-flow--panel-status-filter)
         (setq rs (seq-filter
-                  (lambda (r) (memq (plist-get r :status) ert-flow--panel-status-filter))
+                  (lambda (r) (memq (plist-get r :status) test-flow--panel-status-filter))
                   rs)))
       ;; name filter
-      (when (and (boundp 'ert-flow--panel-name-regexp)
-                 (stringp ert-flow--panel-name-regexp)
-                 (> (length ert-flow--panel-name-regexp) 0))
+      (when (and (boundp 'test-flow--panel-name-regexp)
+                 (stringp test-flow--panel-name-regexp)
+                 (> (length test-flow--panel-name-regexp) 0))
         (setq rs (seq-filter
                   (lambda (r)
                     (let ((nm (or (plist-get r :name) "")))
-                      (ignore-errors (string-match-p ert-flow--panel-name-regexp nm))))
+                      (ignore-errors (string-match-p test-flow--panel-name-regexp nm))))
                   rs)))
       ;; tags filter
-      (when (and (boundp 'ert-flow--panel-tags-filter)
-                 (listp ert-flow--panel-tags-filter)
-                 ert-flow--panel-tags-filter)
+      (when (and (boundp 'test-flow--panel-tags-filter)
+                 (listp test-flow--panel-tags-filter)
+                 test-flow--panel-tags-filter)
         (setq rs (seq-filter
                   (lambda (r)
                     (let ((tags (plist-get r :tags)))
                       (and (listp tags)
                            (seq-some (lambda (want)
                                        (seq-some (lambda (have) (equal (format "%s" have) want)) tags))
-                                     ert-flow--panel-tags-filter))))
+                                     test-flow--panel-tags-filter))))
                   rs)))
       rs)))
 
-(defun ert-flow-panel-filter--set-status (statuses)
+(defun test-flow-panel-filter--set-status (statuses)
   "Helper: set STATUS filter to STATUSES (list or nil) and re-render."
-  (setq-local ert-flow--panel-status-filter statuses)
-  (message "ert-flow: status filter → %s"
+  (setq-local test-flow--panel-status-filter statuses)
+  (message "test-flow: status filter → %s"
            (if statuses (mapconcat (lambda (s) (format "%s" s)) statuses ",") "all"))
-  (ert-flow--render))
+  (test-flow--render))
 
-(defun ert-flow-panel-filter-pass ()  (interactive) (ert-flow-panel-filter--set-status '(pass)))
-(defun ert-flow-panel-filter-fail ()  (interactive) (ert-flow-panel-filter--set-status '(fail)))
-(defun ert-flow-panel-filter-error () (interactive) (ert-flow-panel-filter--set-status '(error)))
-(defun ert-flow-panel-filter-skip ()  (interactive) (ert-flow-panel-filter--set-status '(skip xfail)))
-(defun ert-flow-panel-filter-all ()   (interactive) (ert-flow-panel-filter--set-status nil))
+(defun test-flow-panel-filter-pass ()  (interactive) (test-flow-panel-filter--set-status '(pass)))
+(defun test-flow-panel-filter-fail ()  (interactive) (test-flow-panel-filter--set-status '(fail)))
+(defun test-flow-panel-filter-error () (interactive) (test-flow-panel-filter--set-status '(error)))
+(defun test-flow-panel-filter-skip ()  (interactive) (test-flow-panel-filter--set-status '(skip xfail)))
+(defun test-flow-panel-filter-all ()   (interactive) (test-flow-panel-filter--set-status nil))
 
-(defun ert-flow-panel-set-name-filter (re)
+(defun test-flow-panel-set-name-filter (re)
   "Prompt for name regexp RE and re-render; empty input clears the filter."
-  (interactive (list (read-string "Filter name (regexp, empty=clear): " ert-flow--panel-name-regexp)))
-  (setq-local ert-flow--panel-name-regexp (if (string-empty-p re) nil re))
-  (message "ert-flow: name filter → %s" (or ert-flow--panel-name-regexp "none"))
-  (ert-flow--render))
+  (interactive (list (read-string "Filter name (regexp, empty=clear): " test-flow--panel-name-regexp)))
+  (setq-local test-flow--panel-name-regexp (if (string-empty-p re) nil re))
+  (message "test-flow: name filter → %s" (or test-flow--panel-name-regexp "none"))
+  (test-flow--render))
 
-(defun ert-flow-panel-set-tags-filter (tags)
+(defun test-flow-panel-set-tags-filter (tags)
   "Prompt for TAGS (comma-separated) and re-render; empty input clears the filter."
   (interactive (list (read-string "Filter tags (comma-separated, empty=clear): "
-                                  (when (and (listp ert-flow--panel-tags-filter)
-                                             ert-flow--panel-tags-filter)
-                                    (mapconcat #'identity ert-flow--panel-tags-filter ",")))))
+                                  (when (and (listp test-flow--panel-tags-filter)
+                                             test-flow--panel-tags-filter)
+                                    (mapconcat #'identity test-flow--panel-tags-filter ",")))))
   (let ((trim (string-trim tags)))
-    (setq-local ert-flow--panel-tags-filter
+    (setq-local test-flow--panel-tags-filter
                 (if (string-empty-p trim)
                     nil
                   (seq-filter (lambda (s) (not (string-empty-p s)))
                               (mapcar #'string-trim (split-string trim ","))))))
-  (message "ert-flow: tags filter → %s"
-           (if ert-flow--panel-tags-filter
-               (mapconcat #'identity ert-flow--panel-tags-filter ",")
+  (message "test-flow: tags filter → %s"
+           (if test-flow--panel-tags-filter
+               (mapconcat #'identity test-flow--panel-tags-filter ",")
              "none"))
-  (ert-flow--render))
+  (test-flow--render))
 
-(defun ert-flow-panel-filter-clear ()
+(defun test-flow-panel-filter-clear ()
   "Clear all panel filters and re-render."
   (interactive)
-  (setq-local ert-flow--panel-status-filter nil)
-  (setq-local ert-flow--panel-name-regexp nil)
-  (message "ert-flow: filters cleared")
-  (ert-flow--render))
+  (setq-local test-flow--panel-status-filter nil)
+  (setq-local test-flow--panel-name-regexp nil)
+  (message "test-flow: filters cleared")
+  (test-flow--render))
 
-(defun ert-flow--group-results (results)
+(defun test-flow--group-results (results)
   "Return alist (SUITE . LIST-OF-RESULTS) from RESULTS."
   (let ((ht (make-hash-table :test 'equal))
         acc)
@@ -1525,23 +1525,23 @@ Respects:
     (maphash (lambda (k v) (push (cons k (nreverse v)) acc)) ht)
     (sort acc (lambda (a b) (string< (car a) (car b))))))
 
-(defun ert-flow--insert-test-line (r)
+(defun test-flow--insert-test-line (r)
   "Insert single test line for result plist R with properties.
 
 Preserve special font family (e.g. Material Icons) supplied by icon glyphs
 while applying the status face (color/weight). We compose a face list
 so the icon's font-family is kept and our face supplies the foreground.
 
-Display name: for better readability we strip the common \"ert-flow/\" prefix
+Display name: for better readability we strip the common \"test-flow/\" prefix
 from test names for display only (the underlying result plist is unchanged)."
   (let* ((st (plist-get r :status))
          (nm (plist-get r :name))
-         ;; Shorten names that are in the form 'ert-flow/...' for display.
-         (display-nm (if (and (stringp nm) (string-prefix-p "ert-flow/" nm))
-                         (substring nm (length "ert-flow/"))
+         ;; Shorten names that are in the form 'test-flow/...' for display.
+         (display-nm (if (and (stringp nm) (string-prefix-p "test-flow/" nm))
+                         (substring nm (length "test-flow/"))
                        nm))
-         (icon (if ert-flow-icons (ert-flow--status-icon st) ""))
-         (face (ert-flow--status-face st))
+         (icon (if test-flow-icons (test-flow--status-icon st) ""))
+         (face (test-flow--status-face st))
          ;; If the icon string has a face (from all-the-icons), keep it and combine
          (icon-face (and (> (length icon) 0) (get-text-property 0 'face icon)))
          (combined-face (if icon-face (list icon-face face) face))
@@ -1549,9 +1549,9 @@ from test names for display only (the underlying result plist is unchanged)."
                         (propertize icon 'face combined-face)
                       ""))
          (line (format "  %s %s\n" icon-prop (or display-nm nm))))
-    (insert (ert-flow--propertize line r))))
+    (insert (test-flow--propertize line r))))
 
-(defun ert-flow--suite-aggregate (results)
+(defun test-flow--suite-aggregate (results)
   "Return aggregate status symbol for RESULTS: all-pass, all-fail, mixed, skipped-only, or empty."
   (let* ((p (cl-count-if (lambda (r) (eq (plist-get r :status) 'pass)) results))
          (f (cl-count-if (lambda (r) (eq (plist-get r :status) 'fail)) results))
@@ -1564,7 +1564,7 @@ from test names for display only (the underlying result plist is unchanged)."
      ((and (= p 0) (= (+ f e) 0) (> s 0)) 'skipped-only)
      (t 'mixed))))
 
-(defun ert-flow--suite-icon (agg)
+(defun test-flow--suite-icon (agg)
   "Return colored folder icon string for AGG aggregate status."
   (let* ((color (pcase agg
                   ('all-pass "SpringGreen3")
@@ -1591,7 +1591,7 @@ from test names for display only (the underlying result plist is unchanged)."
              (combined (if icon-face (list icon-face face) face)))
         (propertize icon 'face combined))))))
 
-(defun ert-flow--insert-suite (suite results)
+(defun test-flow--insert-suite (suite results)
   "Insert a SUITE heading and its RESULTS, always showing suite header.
 Heading is clickable to toggle fold. Header includes a colored folder icon
 reflecting aggregate suite status:
@@ -1601,26 +1601,26 @@ reflecting aggregate suite status:
 - gray: only skipped/xfail or empty.
 
 Note: do not override icon color with a uniform button face."
-  (ert-flow--ensure-fold-table)
-  (let* ((agg (ert-flow--suite-aggregate results))
+  (test-flow--ensure-fold-table)
+  (let* ((agg (test-flow--suite-aggregate results))
          ;; Initialize default folding once per suite (only if key absent)
          (present (let ((marker '#:no))
-                    (not (eq (gethash suite ert-flow--folded-suites marker) marker))))
+                    (not (eq (gethash suite test-flow--folded-suites marker) marker))))
          (_init (unless present
                   (when (eq agg 'all-pass)
-                    (puthash suite t ert-flow--folded-suites))))
-         (folded (gethash suite ert-flow--folded-suites)))
+                    (puthash suite t test-flow--folded-suites))))
+         (folded (gethash suite test-flow--folded-suites)))
     ;; Diagnostic: log suite aggregate and fold state
-    (ert-flow--log "suite: %s agg=%s folded=%s"
-                   suite agg (if folded "t" "nil"))
+    (test-flow--log "suite: %s agg=%s folded=%s"
+                    suite agg (if folded "t" "nil"))
     ;; UX: if suite was previously auto-folded as all-pass, but now has failures/errors,
     ;; auto-unfold it so the red tests are visible immediately.
     (when (and folded (not (eq agg 'all-pass)))
-      (puthash suite nil ert-flow--folded-suites)
+      (puthash suite nil test-flow--folded-suites)
       (setq folded nil)
-      (ert-flow--log "suite: auto-unfold due to non-pass aggregate → %s" suite))
+      (test-flow--log "suite: auto-unfold due to non-pass aggregate → %s" suite))
     (let* ((arrow (if folded "▸" "▾"))
-           (icon (ert-flow--suite-icon agg))
+           (icon (test-flow--suite-icon agg))
            (name suite)
            (s (concat arrow " " icon " " name "\n"))
            (arrow-len (length arrow))
@@ -1640,42 +1640,42 @@ Note: do not override icon color with a uniform button face."
        'mouse-face nil
        'follow-link t
        'help-echo "Toggle group (mouse-1, TAB)"
-       'keymap ert-flow--suite-button-map
-       'ert-flow--suite suite
+       'keymap test-flow--suite-button-map
+       'test-flow--suite suite
        'action (lambda (_btn)
-                 (ert-flow--ensure-fold-table)
-                 (let ((cur (gethash suite ert-flow--folded-suites)))
-                   (puthash suite (not cur) ert-flow--folded-suites))
+                 (test-flow--ensure-fold-table)
+                 (let ((cur (gethash suite test-flow--folded-suites)))
+                   (puthash suite (not cur) test-flow--folded-suites))
                  ;; Ensure we re-render the correct panel buffer (current buffer).
-                 (let ((ert-flow--panel-buffer-name (buffer-name)))
-                   (setq-local ert-flow--restore-point-suite suite)
-                   (ert-flow--render))))
+                 (let ((test-flow--panel-buffer-name (buffer-name)))
+                   (setq-local test-flow--restore-point-suite suite)
+                   (test-flow--render))))
       (unless folded
         (dolist (r results)
-          (ert-flow--insert-test-line r))))))
+          (test-flow--insert-test-line r))))))
 
-(defun ert-flow--goto-suite-heading (suite)
+(defun test-flow--goto-suite-heading (suite)
   "Move point to the heading line of SUITE. Return non-nil on success."
   (goto-char (point-min))
   (catch 'found
     (while (not (eobp))
-      (when (equal (get-text-property (line-beginning-position) 'ert-flow--suite) suite)
+      (when (equal (get-text-property (line-beginning-position) 'test-flow--suite) suite)
         (beginning-of-line)
         (throw 'found t))
       (forward-line 1))
     nil))
 
-(defun ert-flow--render-context--simple ()
-  "Deprecated pre-logging variant; use `ert-flow--render-context' instead."
-  (ert-flow--render-context))
+(defun test-flow--render-context--simple ()
+  "Deprecated pre-logging variant; use `test-flow--render-context' instead."
+  (test-flow--render-context))
 
 ;; Collapsible Status block (panel header area in buffer)
-(defvar-local ert-flow--panel-status-folded t
+(defvar-local test-flow--panel-status-folded t
   "If non-nil, the status block is folded in this panel buffer.")
-(defvar-local ert-flow--panel-status-initialized nil
+(defvar-local test-flow--panel-status-initialized nil
   "Internal: if non-nil, do not overwrite fold state from session conf during render.")
 
-(defun ert-flow--panel-status-icon ()
+(defun test-flow--panel-status-icon ()
   "Return an icon for the Status block (all-the-icons if available, else text).
 
 Preserve the icon's font family from all-the-icons so the glyph renders
@@ -1691,7 +1691,7 @@ with the correct font; only add our foreground color on top."
    ((char-displayable-p ?📝) "📝")
    (t "[S]")))
 
-(defun ert-flow--panel-summary-icon ()
+(defun test-flow--panel-summary-icon ()
   "Return an icon for the Summary header."
   (cond
    ((and (featurep 'all-the-icons)
@@ -1703,7 +1703,7 @@ with the correct font; only add our foreground color on top."
    ((char-displayable-p ?≡) "≡")
    (t "[Σ]")))
 
-(defun ert-flow--status-line-icon (key &optional state)
+(defun test-flow--status-line-icon (key &optional state)
   "Return icon for Status line KEY. Optional STATE for toggles like watch."
   (let ((gui (and (featurep 'all-the-icons)
                   (display-graphic-p)
@@ -1748,42 +1748,42 @@ with the correct font; only add our foreground color on top."
         ('parser   (if (char-displayable-p ?🧩) "🧩" "X"))
         (_ ""))))))
 
-(defun ert-flow--status-counters-str (sum results)
+(defun test-flow--status-counters-str (sum results)
   "Return colored counters string: \"N (P:x F:y E:z S:u U:w)\"."
   (cl-destructuring-bind (&key total unexpected passed failed error skipped &allow-other-keys)
-      (apply #'ert-flow--summary-counters (list sum results))
-    (let* ((u-face (if (> (or unexpected 0) 0) 'ert-flow-face-fail 'ert-flow-face-pass)))
+      (apply #'test-flow--summary-counters (list sum results))
+    (let* ((u-face (if (> (or unexpected 0) 0) 'test-flow-face-fail 'test-flow-face-pass)))
       (concat
        (format "%d (" (or total 0))
-       (propertize (format "P:%d" (or passed 0)) 'face 'ert-flow-face-pass)
+       (propertize (format "P:%d" (or passed 0)) 'face 'test-flow-face-pass)
        " "
-       (propertize (format "F:%d" (or failed 0)) 'face 'ert-flow-face-fail)
+       (propertize (format "F:%d" (or failed 0)) 'face 'test-flow-face-fail)
        " "
-       (propertize (format "E:%d" (or error 0)) 'face 'ert-flow-face-error)
+       (propertize (format "E:%d" (or error 0)) 'face 'test-flow-face-error)
        " "
-       (propertize (format "S:%d" (or skipped 0)) 'face 'ert-flow-face-skip)
+       (propertize (format "S:%d" (or skipped 0)) 'face 'test-flow-face-skip)
        " "
        (propertize (format "U:%d" (or unexpected 0)) 'face u-face)
        ")"))))
 
-(defun ert-flow--insert-status-block (sess sum results)
+(defun test-flow--insert-status-block (sess sum results)
   "Insert the collapsible Status block with meta info and counters."
-  (let* ((folded ert-flow--panel-status-folded)
+  (let* ((folded test-flow--panel-status-folded)
          (arrow (if folded "▸" "▾"))
-         (icon (ert-flow--panel-status-icon))
+         (icon (test-flow--panel-status-icon))
          (project (file-name-nondirectory
-                   (directory-file-name (ert-flow--session-root sess))))
-         (runner-sym (ert-flow--conf sess 'runner ert-flow-runner))
+                   (directory-file-name (test-flow--session-root sess))))
+         (runner-sym (test-flow--conf sess 'runner test-flow-runner))
          (runner (if (eq runner-sym 'in-emacs-ert) "in-emacs" "external"))
-         (watch-on (ert-flow--get-watch-enabled sess))
+         (watch-on (test-flow--get-watch-enabled sess))
          (watch (if watch-on "On" "Off"))
-         (mode (ert-flow--conf sess 'watch-mode ert-flow-watch-mode))
-         (parser-used (or (ert-flow--get-last-parser sess)
-                          (ert-flow--conf sess 'parser ert-flow-parser)))
+         (mode (test-flow--conf sess 'watch-mode test-flow-watch-mode))
+         (parser-used (or (test-flow--get-last-parser sess)
+                          (test-flow--conf sess 'parser test-flow-parser)))
          (parser-str (format "%s" parser-used))
-         (active ert-flow--active-run-count)
-         (queued (length ert-flow--run-queue))
-         (dur-str (plist-get (apply #'ert-flow--summary-counters (list sum results)) :dur-str))
+         (active test-flow--active-run-count)
+         (queued (length test-flow--run-queue))
+         (dur-str (plist-get (apply #'test-flow--summary-counters (list sum results)) :dur-str))
          ;; Compose heading: avoid adding (propertize ...) to the *whole* string, only apply :weight bold to word "Status"
          (arrow-len (length arrow))
          (icon-len (length icon))
@@ -1794,7 +1794,7 @@ with the correct font; only add our foreground color on top."
            (concat label
                    (when folded
                      (concat " "
-                             (ert-flow--status-counters-str sum results)))
+                             (test-flow--status-counters-str sum results)))
                    "\n")))
          (status-pos (string-match "Status" label-str)))
     ;; Make only "Status" bold, not the whole string (to avoid underline/other theme effects)
@@ -1811,144 +1811,144 @@ with the correct font; only add our foreground color on top."
      'mouse-face nil
      'follow-link t
      'help-echo "Fold/unfold Status (mouse-1, TAB)"
-     'keymap ert-flow--status-button-map
-     'ert-flow--nav 'status
+     'keymap test-flow--status-button-map
+     'test-flow--nav 'status
      'action (lambda (_btn)
-               (ert-flow-toggle-status)))
+               (test-flow-toggle-status)))
     ;; Body when unfolded (each line with its own icon)
     (unless folded
       (let ((mk (lambda (icon-str body)
                   (insert (propertize (format "  %s %s" icon-str body)
-                                      'ert-flow--nav 'status-item))
+                                      'test-flow--nav 'status-item))
                   (insert "\n"))))
-        (funcall mk (ert-flow--status-line-icon 'counters)
-                 (propertize (ert-flow--status-counters-str sum results) 'face '(:weight bold)))
-        (funcall mk (ert-flow--status-line-icon 'duration)
+        (funcall mk (test-flow--status-line-icon 'counters)
+                 (propertize (test-flow--status-counters-str sum results) 'face '(:weight bold)))
+        (funcall mk (test-flow--status-line-icon 'duration)
                  (format "duration: %s" (or dur-str "-")))
-        (funcall mk (ert-flow--status-line-icon 'proc)
+        (funcall mk (test-flow--status-line-icon 'proc)
                  (format "Proc: active %d, queued %d" active queued))
-        (funcall mk (ert-flow--status-line-icon 'project)
+        (funcall mk (test-flow--status-line-icon 'project)
                  (format "Project: %s" project))
-        (funcall mk (ert-flow--status-line-icon 'runner)
+        (funcall mk (test-flow--status-line-icon 'runner)
                  (format "Runner: %s" runner))
-        (funcall mk (ert-flow--status-line-icon 'mode)
+        (funcall mk (test-flow--status-line-icon 'mode)
                  (format "Mode: %s" mode))
-        (funcall mk (ert-flow--status-line-icon 'watch (if watch-on 'on 'off))
+        (funcall mk (test-flow--status-line-icon 'watch (if watch-on 'on 'off))
                  (format "Watch: %s" watch))
-        (funcall mk (ert-flow--status-line-icon 'parser)
+        (funcall mk (test-flow--status-line-icon 'parser)
                  (format "Parser: %s" parser-str))))
     (insert "\n")))
 
-(defun ert-flow-toggle-status ()
+(defun test-flow-toggle-status ()
   "Toggle folding of the Status block and re-render."
   (interactive)
-  (setq ert-flow--panel-status-folded (not ert-flow--panel-status-folded))
+  (setq test-flow--panel-status-folded (not test-flow--panel-status-folded))
   ;; Persist fold state in the session config so it survives re-renders/reloads.
-  (when (fboundp 'ert-flow--find-panel-session)
+  (when (fboundp 'test-flow--find-panel-session)
     (ignore-errors
-      (let ((sess (ert-flow--find-panel-session)))
+      (let ((sess (test-flow--find-panel-session)))
         (when sess
-          (ert-flow--set-conf sess 'panel-status-folded ert-flow--panel-status-folded)))))
-  (let ((ert-flow--panel-buffer-name (buffer-name)))
-    (ert-flow--render)))
+          (test-flow--set-conf sess 'panel-status-folded test-flow--panel-status-folded)))))
+  (let ((test-flow--panel-buffer-name (buffer-name)))
+    (test-flow--render)))
 
-(defun ert-flow--render-insert--precoverage (ctx)
+(defun test-flow--render-insert--precoverage (ctx)
   "Deprecated pre-coverage variant: kept for reference."
-  (ert-flow--render-insert ctx))
+  (test-flow--render-insert ctx))
 
-(defun ert-flow--render-restore-point ()
+(defun test-flow--render-restore-point ()
   "Restore point to requested suite heading, or move to beginning."
-  (if (and (boundp 'ert-flow--restore-point-suite) ert-flow--restore-point-suite)
+  (if (and (boundp 'test-flow--restore-point-suite) test-flow--restore-point-suite)
       (progn
-        (ert-flow--goto-suite-heading ert-flow--restore-point-suite)
-        (setq ert-flow--restore-point-suite nil))
+        (test-flow--goto-suite-heading test-flow--restore-point-suite)
+        (setq test-flow--restore-point-suite nil))
     (goto-char (point-min))))
 
-(defun ert-flow--render-context ()
+(defun test-flow--render-context ()
   "Collect session context for rendering.
 Returns plist: (:sess :sum :results :proc) and emits diagnostic logs."
-  (let* ((sess (ert-flow--find-panel-session))
-         (sum (and sess (ert-flow--get-last-summary sess)))
-         (results (and sess (ert-flow--get-last-results sess)))
-         (proc (and sess (ert-flow--get-process sess))))
-    (ert-flow--log "render: panel=%s sess=%s results=%s total=%s filters: status=%S name=%S tags=%S"
-                   ert-flow--panel-buffer-name
-                   (and sess (ert-flow--dbg-sess sess))
-                   (if (listp results) (number-to-string (length results)) "nil")
-                   (or (and (listp sum) (alist-get 'total sum)) "?")
-                   (and (boundp 'ert-flow--panel-status-filter) ert-flow--panel-status-filter)
-                   (and (boundp 'ert-flow--panel-name-regexp) ert-flow--panel-name-regexp)
-                   (and (boundp 'ert-flow--panel-tags-filter) ert-flow--panel-tags-filter))
+  (let* ((sess (test-flow--find-panel-session))
+         (sum (and sess (test-flow--get-last-summary sess)))
+         (results (and sess (test-flow--get-last-results sess)))
+         (proc (and sess (test-flow--get-process sess))))
+    (test-flow--log "render: panel=%s sess=%s results=%s total=%s filters: status=%S name=%S tags=%S"
+                    test-flow--panel-buffer-name
+                    (and sess (test-flow--dbg-sess sess))
+                    (if (listp results) (number-to-string (length results)) "nil")
+                    (or (and (listp sum) (alist-get 'total sum)) "?")
+                    (and (boundp 'test-flow--panel-status-filter) test-flow--panel-status-filter)
+                    (and (boundp 'test-flow--panel-name-regexp) test-flow--panel-name-regexp)
+                    (and (boundp 'test-flow--panel-tags-filter) test-flow--panel-tags-filter))
     ;; Extra diagnostics: counters P/F/E/U as seen by renderer.
-    (let* ((cnt (apply #'ert-flow--summary-counters (list sum results))))
-      (ert-flow--log "render: counters P:%s F:%s E:%s U:%s"
-                     (plist-get cnt :passed)
-                     (plist-get cnt :failed)
-                     (plist-get cnt :error)
-                     (plist-get cnt :unexpected)))
+    (let* ((cnt (apply #'test-flow--summary-counters (list sum results))))
+      (test-flow--log "render: counters P:%s F:%s E:%s U:%s"
+                      (plist-get cnt :passed)
+                      (plist-get cnt :failed)
+                      (plist-get cnt :error)
+                      (plist-get cnt :unexpected)))
     (when (null results)
-      (ert-flow--log "no-results: none stored yet (root=%s) proc-live=%s first-open-done=%s run-on-open=%s runner=%s cmd=%S active=%d queued=%d"
-                     (and sess (ert-flow--session-root sess))
-                     (and proc (process-live-p proc))
-                     (ert-flow--conf sess 'first-open-run-done nil)
-                     ert-flow-run-on-open
-                     (ert-flow--conf sess 'runner ert-flow-runner)
-                     (ert-flow--conf sess 'external-command ert-flow-external-command)
-                     ert-flow--active-run-count
-                     (length ert-flow--run-queue))
-      (ert-flow--log-concurrency-state))
+      (test-flow--log "no-results: none stored yet (root=%s) proc-live=%s first-open-done=%s run-on-open=%s runner=%s cmd=%S active=%d queued=%d"
+                      (and sess (test-flow--session-root sess))
+                      (and proc (process-live-p proc))
+                      (test-flow--conf sess 'first-open-run-done nil)
+                      test-flow-run-on-open
+                      (test-flow--conf sess 'runner test-flow-runner)
+                      (test-flow--conf sess 'external-command test-flow-external-command)
+                      test-flow--active-run-count
+                      (length test-flow--run-queue))
+      (test-flow--log-concurrency-state))
     (when (and (listp results) (= (length results) 0))
-      (ert-flow--log "no-results: empty list (root=%s) total=%s last-parser=%s"
-                     (and sess (ert-flow--session-root sess))
-                     (or (and (listp sum) (alist-get 'total sum)) "?")
-                     (or (ert-flow--get-last-parser sess)
-                         (ert-flow--conf sess 'parser ert-flow-parser))))
+      (test-flow--log "no-results: empty list (root=%s) total=%s last-parser=%s"
+                      (and sess (test-flow--session-root sess))
+                      (or (and (listp sum) (alist-get 'total sum)) "?")
+                      (or (test-flow--get-last-parser sess)
+                          (test-flow--conf sess 'parser test-flow-parser))))
     (list :sess sess :sum sum :results results :proc proc)))
 
-(defun ert-flow--render-insert (ctx)
+(defun test-flow--render-insert (ctx)
   "Insert Status block and grouped suites using CTX."
   (let* ((sess (plist-get ctx :sess))
          (sum (plist-get ctx :sum))
          (results (plist-get ctx :results)))
     ;; Header-line hosts controls; buffer body starts with Status block.
-    (ert-flow--insert-status-block sess sum results)
-    ;; Optional coverage block (if ert-flow-coverage is loaded)
-    (when (fboundp 'ert-flow-coverage--insert-panel-block)
-      (ignore-errors (ert-flow-coverage--insert-panel-block sess)))
+    (test-flow--insert-status-block sess sum results)
+    ;; Optional coverage block (if test-flow-coverage is loaded)
+    (when (fboundp 'test-flow-coverage--insert-panel-block)
+      (ignore-errors (test-flow-coverage--insert-panel-block sess)))
     ;; Directly list groups (Summary header removed as redundant)
-    (dolist (pair (ert-flow--group-results (ert-flow--apply-panel-filters results)))
-      (ert-flow--insert-suite (car pair) (cdr pair)))))
+    (dolist (pair (test-flow--group-results (test-flow--apply-panel-filters results)))
+      (test-flow--insert-suite (car pair) (cdr pair)))))
 
-(defun ert-flow--render-restore-point ()
+(defun test-flow--render-restore-point ()
   "Restore point after rendering to suite header if requested, else to beginning."
-  (if (and (boundp 'ert-flow--restore-point-suite) ert-flow--restore-point-suite)
+  (if (and (boundp 'test-flow--restore-point-suite) test-flow--restore-point-suite)
       (progn
-        (ert-flow--goto-suite-heading ert-flow--restore-point-suite)
-        (setq ert-flow--restore-point-suite nil))
+        (test-flow--goto-suite-heading test-flow--restore-point-suite)
+        (setq test-flow--restore-point-suite nil))
     (goto-char (point-min))))
 
-(defun ert-flow--render ()
-  "Render the panel for the session associated with `ert-flow--panel-buffer-name'."
-  (let ((buf (get-buffer-create ert-flow--panel-buffer-name)))
+(defun test-flow--render ()
+  "Render the panel for the session associated with `test-flow--panel-buffer-name'."
+  (let ((buf (get-buffer-create test-flow--panel-buffer-name)))
     (with-current-buffer buf
       (let ((inhibit-read-only t))
         (erase-buffer)
-        (let* ((ctx (ert-flow--render-context))
+        (let* ((ctx (test-flow--render-context))
                (sess (plist-get ctx :sess)))
           ;; Initialize Status fold state from session config only once per buffer,
           ;; and never override when the variable is already locally set (tests or UI).
           (when sess
-            (if (local-variable-p 'ert-flow--panel-status-folded (current-buffer))
-                (setq-local ert-flow--panel-status-initialized t)
-              (unless ert-flow--panel-status-initialized
-                (setq-local ert-flow--panel-status-folded
-                            (ert-flow--conf sess 'panel-status-folded t))
-                (setq-local ert-flow--panel-status-initialized t))))
-          (ert-flow--render-insert ctx))
-        (ert-flow--render-restore-point)))))
+            (if (local-variable-p 'test-flow--panel-status-folded (current-buffer))
+                (setq-local test-flow--panel-status-initialized t)
+              (unless test-flow--panel-status-initialized
+                (setq-local test-flow--panel-status-folded
+                            (test-flow--conf sess 'panel-status-folded t))
+                (setq-local test-flow--panel-status-initialized t))))
+          (test-flow--render-insert ctx))
+        (test-flow--render-restore-point)))))
 
 
-(defun ert-flow--details-insert-toolbar (name details)
+(defun test-flow--details-insert-toolbar (name details)
   "Insert toolbar for details buffer with NAME and DETAILS."
   (insert (propertize (format "%s  " name) 'face 'mode-line-buffer-id))
   (insert-text-button "[Goto]"
@@ -1969,7 +1969,7 @@ Returns plist: (:sess :sum :results :proc) and emits diagnostic logs."
                       'follow-link t
                       'action (lambda (_)
                                 (kill-new details)
-                                (message "ert-flow: details copied")))
+                                (message "test-flow: details copied")))
   (insert "  ")
   (insert-text-button "[Close]"
                       'face 'link
@@ -1980,35 +1980,35 @@ Returns plist: (:sess :sum :results :proc) and emits diagnostic logs."
                                 (quit-window t)))
   (insert "\n\n"))
 
-(defun ert-flow--details-populate-buffer (buf name details)
+(defun test-flow--details-populate-buffer (buf name details)
   "Populate BUF with toolbar and DETAILS for NAME."
   (with-current-buffer buf
     (let ((inhibit-read-only t))
       (read-only-mode -1)
       (erase-buffer)
-      (ert-flow--details-insert-toolbar name details)
+      (test-flow--details-insert-toolbar name details)
       (insert details)
       (goto-char (point-min))
       (view-mode 1))))
 
 ;;;###autoload
-(defun ert-flow-open-details-at-point ()
+(defun test-flow-open-details-at-point ()
   "Open a buffer with details for the test at point (session-aware)."
   (interactive)
-  (let* ((r (get-text-property (line-beginning-position) 'ert-flow--result)))
+  (let* ((r (get-text-property (line-beginning-position) 'test-flow--result)))
     (if (null r)
         (user-error "No test result at point")
-      (let* ((root (ert-flow--project-root))
-             (bufname (ert-flow--session-details-name root))
+      (let* ((root (test-flow--project-root))
+             (bufname (test-flow--session-details-name root))
              (buf (get-buffer-create bufname))
              (name (plist-get r :name))
              (details (or (plist-get r :details) "No details")))
-        (ert-flow--details-populate-buffer buf name details)
+        (test-flow--details-populate-buffer buf name details)
         (display-buffer buf)))))
 
 ;;; Navigation
 
-(defun ert-flow--goto-next-item (dir)
+(defun test-flow--goto-next-item (dir)
   "Move point to next (DIR>0) or previous (DIR<0) item (test, suite, status/summary)."
   (let ((step (if (> dir 0) 1 -1))
         (start (point))
@@ -2016,41 +2016,41 @@ Returns plist: (:sess :sum :results :proc) and emits diagnostic logs."
     (catch 'jump
       (while (if (> dir 0) (not (eobp)) (not (bobp)))
         (forward-line step)
-        (let ((is-test (get-text-property (line-beginning-position) 'ert-flow--result))
-              (is-suite (get-text-property (line-beginning-position) 'ert-flow--suite))
-              (nav     (get-text-property (line-beginning-position) 'ert-flow--nav)))
+        (let ((is-test (get-text-property (line-beginning-position) 'test-flow--result))
+              (is-suite (get-text-property (line-beginning-position) 'test-flow--suite))
+              (nav     (get-text-property (line-beginning-position) 'test-flow--nav)))
           (when (or nav is-test is-suite)
             (beginning-of-line)
             (setq done t)
             (throw 'jump t)))))
     (unless done
       (goto-char start)
-      (message "ert-flow: no more items"))))
+      (message "test-flow: no more items"))))
 
-(defun ert-flow-next-item () (interactive) (ert-flow--goto-next-item 1))
-(defun ert-flow-previous-item () (interactive) (ert-flow--goto-next-item -1))
+(defun test-flow-next-item () (interactive) (test-flow--goto-next-item 1))
+(defun test-flow-previous-item () (interactive) (test-flow--goto-next-item -1))
 
-(defun ert-flow-tab ()
+(defun test-flow-tab ()
   "Context-aware TAB: toggle Status at Status header, on any Status line, or toggle suite."
   (interactive)
-  (let* ((nav (get-text-property (line-beginning-position) 'ert-flow--nav))
-         (suite (get-text-property (line-beginning-position) 'ert-flow--suite)))
+  (let* ((nav (get-text-property (line-beginning-position) 'test-flow--nav))
+         (suite (get-text-property (line-beginning-position) 'test-flow--suite)))
     (cond
      ((or (eq nav 'status) (eq nav 'status-item))
-      (ert-flow-toggle-status))
+      (test-flow-toggle-status))
      (suite
-      (ert-flow-toggle-group-at-point))
+      (test-flow-toggle-group-at-point))
      (t
-      (ert-flow-toggle-group-at-point)))))
+      (test-flow-toggle-group-at-point)))))
 
 ;;;###autoload
-(defun ert-flow-goto-definition-at-point ()
+(defun test-flow-goto-definition-at-point ()
   "Jump to the ERT test definition at point.
 
 Tries to intern the test name and call `find-function'.
 Works when the test function is loaded in the current Emacs session."
   (interactive)
-  (let* ((r (get-text-property (line-beginning-position) 'ert-flow--result))
+  (let* ((r (get-text-property (line-beginning-position) 'test-flow--result))
          (name (and r (plist-get r :name))))
     (unless name
       (user-error "No test result at point"))
@@ -2062,31 +2062,31 @@ Works when the test function is loaded in the current Emacs session."
 ;;;; Running external command
 
 ;;;###autoload
-(defun ert-flow--failed-names (results)
+(defun test-flow--failed-names (results)
   "Return names of failed/error tests from RESULTS."
   (mapcar (lambda (r) (plist-get r :name))
           (seq-filter (lambda (r) (memq (plist-get r :status) '(fail error)))
                       (or results '()))))
 
-(defun ert-flow--run-failed-in-emacs (sess fails)
+(defun test-flow--run-failed-in-emacs (sess fails)
   "Schedule in-Emacs run for FAILS in SESS."
-  (let ((selector (ert-flow--selector-names fails))
+  (let ((selector (test-flow--selector-names fails))
         (label (format "failed(in-emacs) %d" (length fails))))
-    (ert-flow--maybe-start-thunk
+    (test-flow--maybe-start-thunk
      sess label
-     (lambda () (ert-flow--start-in-emacs sess selector label)))))
+     (lambda () (test-flow--start-in-emacs sess selector label)))))
 
-(defun ert-flow--build-external-failed-cmd (sess fails)
+(defun test-flow--build-external-failed-cmd (sess fails)
   "Return external argv to run FAILS for SESS or nil if unavailable."
-  (let* ((ext-cmd (ert-flow--conf sess 'external-command ert-flow-external-command))
-         (failed-fn (ert-flow--conf sess 'external-failed-args-function ert-flow-external-failed-args-function)))
+  (let* ((ext-cmd (test-flow--conf sess 'external-command test-flow-external-command))
+         (failed-fn (test-flow--conf sess 'external-failed-args-function test-flow-external-failed-args-function)))
     (when (and (listp ext-cmd) failed-fn)
       (let ((extra (ignore-errors (funcall failed-fn fails))))
         (when (and (listp extra) (seq-every-p #'stringp extra))
           (append ext-cmd extra))))))
 
 ;;;###autoload
-(defun ert-flow-run-failed ()
+(defun test-flow-run-failed ()
   "Run only failed/error tests if possible, else run all (session-aware).
 
 For 'external-command runner:
@@ -2095,69 +2095,69 @@ For 'external-command runner:
 For 'in-emacs-ert runner:
 - Builds an ERT selector for failed test names and runs inside Emacs."
   (interactive)
-  (let* ((root (ert-flow--project-root))
-         (sess (ert-flow--get-session root))
-         (results (or (and sess (ert-flow--session-last-results sess)) ert-flow--last-results))
-         (fails (ert-flow--failed-names results))
-         (runner (ert-flow--conf sess 'runner ert-flow-runner)))
+  (let* ((root (test-flow--project-root))
+         (sess (test-flow--get-session root))
+         (results (or (and sess (test-flow--session-last-results sess)) test-flow--last-results))
+         (fails (test-flow--failed-names results))
+         (runner (test-flow--conf sess 'runner test-flow-runner)))
     (cond
      ((null fails)
-      (message "ert-flow: no failed tests to run")
-      (ert-flow-run))
+      (message "test-flow: no failed tests to run")
+      (test-flow-run))
      ((eq runner 'in-emacs-ert)
-      (ert-flow--run-failed-in-emacs sess fails))
+      (test-flow--run-failed-in-emacs sess fails))
      (t
-      (let ((cmd (ert-flow--build-external-failed-cmd sess fails)))
+      (let ((cmd (test-flow--build-external-failed-cmd sess fails)))
         (if (not cmd)
             (progn
-              (message "ert-flow: cannot run failed selectively; running all")
-              (ert-flow-run))
-          (ert-flow--maybe-start-run sess cmd "failed")))))))
+              (message "test-flow: cannot run failed selectively; running all")
+              (test-flow-run))
+          (test-flow--maybe-start-run sess cmd "failed")))))))
 
 ;;;###autoload
-(defun ert-flow-run ()
+(defun test-flow-run ()
   "Run tests according to per-session runner (session-aware).
 
 - 'external-command: uses session's external-command
 - 'in-emacs-ert: runs `ert-run-tests-batch' inside Emacs and parses output"
   (interactive)
-  (let* ((root (ert-flow--project-root))
-         (sess (ert-flow--get-session root))
-         (runner (ert-flow--conf sess 'runner ert-flow-runner)))
+  (let* ((root (test-flow--project-root))
+         (sess (test-flow--get-session root))
+         (runner (test-flow--conf sess 'runner test-flow-runner)))
     (pcase runner
       ('in-emacs-ert
-       (ert-flow--log "run: in-emacs (root=%s)" root)
+       (test-flow--log "run: in-emacs (root=%s)" root)
        (let ((selector t) (label "all(in-emacs)"))
-         (ert-flow--maybe-start-thunk
+         (test-flow--maybe-start-thunk
           sess label
-          (lambda () (ert-flow--start-in-emacs sess selector label)))))
+          (lambda () (test-flow--start-in-emacs sess selector label)))))
       (_
-       (let* ((ext (ert-flow--conf sess 'external-command ert-flow-external-command))
-              (cmd (ert-flow--normalize-command ext)))
+       (let* ((ext (test-flow--conf sess 'external-command test-flow-external-command))
+              (cmd (test-flow--normalize-command ext)))
          (unless cmd
-           (ert-flow--log "run: external-command missing (root=%s ext=%S)" root ext)
-           (user-error "Set per-session external command (M-x ert-flow-detect-runner)"))
-         (ert-flow--log "run: external (root=%s cmd=%S)" root cmd)
-         (ert-flow--maybe-start-run sess cmd "all"))))))
+           (test-flow--log "run: external-command missing (root=%s ext=%S)" root ext)
+           (user-error "Set per-session external command (M-x test-flow-detect-runner)"))
+         (test-flow--log "run: external (root=%s cmd=%S)" root cmd)
+         (test-flow--maybe-start-run sess cmd "all"))))))
 
-(defun ert-flow--proc-filter (proc chunk)
+(defun test-flow--proc-filter (proc chunk)
   "Accumulate CHUNK from the running process, session-aware."
   (condition-case err
-      (let* ((sess (process-get proc 'ert-flow-session))
-             (old (and sess (ert-flow--get-last-raw-output sess)))
+      (let* ((sess (process-get proc 'test-flow-session))
+             (old (and sess (test-flow--get-last-raw-output sess)))
              (combined (concat (or old "") chunk)))
         ;; Trim per configured cap to save memory
-        (when (and (integerp ert-flow-max-raw-output-bytes)
-                   (> (length combined) ert-flow-max-raw-output-bytes))
-          (setq combined (substring combined (- (length combined) ert-flow-max-raw-output-bytes))))
+        (when (and (integerp test-flow-max-raw-output-bytes)
+                   (> (length combined) test-flow-max-raw-output-bytes))
+          (setq combined (substring combined (- (length combined) test-flow-max-raw-output-bytes))))
         (when sess
-          (ert-flow--set-last-raw-output sess combined))
+          (test-flow--set-last-raw-output sess combined))
         ;; Legacy global mirrors current session
-        (setq ert-flow--last-raw-output combined))
+        (setq test-flow--last-raw-output combined))
     (error
-     (ert-flow--log "Filter error: %S" err))))
+     (test-flow--log "Filter error: %S" err))))
 
-(defun ert-flow--looks-like-batch-output (s)
+(defun test-flow--looks-like-batch-output (s)
   "Heuristic: return non-nil if S looks like ERT batch output."
   (and (stringp s)
        (or (string-match-p "^Running[ \t]+[0-9]+[ \t]+tests?" s)
@@ -2166,14 +2166,14 @@ For 'in-emacs-ert runner:
            (string-match-p "^[ \t]*\\(FAILED\\|ERROR\\|SKIPPED\\|XFAIL\\|XPASS\\)[ \t]" s)
            (string-match-p "^[ \t]*passed[ \t]+[0-9]+/[0-9]+[ \t]+" s))))
 
-(defun ert-flow--looks-like-json-output (s)
+(defun test-flow--looks-like-json-output (s)
   "Heuristic: return non-nil if S looks like our JSON payload."
   (and (stringp s)
        (string-match-p "{" s)
        (or (string-match-p "\"tests\"" s)
            (string-match-p "\"summary\"" s))))
 
-(defun ert-flow--choose-output-for-parse (stdout stderr)
+(defun test-flow--choose-output-for-parse (stdout stderr)
   "Choose stream to parse using simple heuristics.
 
 Prefer JSON when only one side looks like JSON.
@@ -2182,39 +2182,39 @@ because ERT often splits progress and failures across streams.
 Otherwise, fall back to non-empty stdout, then stderr."
   (cond
    ;; Prefer JSON stream when only one side looks like JSON
-   ((and (ert-flow--looks-like-json-output stdout)
-         (not (ert-flow--looks-like-json-output stderr)))
+   ((and (test-flow--looks-like-json-output stdout)
+         (not (test-flow--looks-like-json-output stderr)))
     stdout)
-   ((and (ert-flow--looks-like-json-output stderr)
-         (not (ert-flow--looks-like-json-output stdout)))
+   ((and (test-flow--looks-like-json-output stderr)
+         (not (test-flow--looks-like-json-output stdout)))
     stderr)
    ;; If both look like batch output → merge
-   ((and (ert-flow--looks-like-batch-output stdout)
-         (ert-flow--looks-like-batch-output stderr))
+   ((and (test-flow--looks-like-batch-output stdout)
+         (test-flow--looks-like-batch-output stderr))
     (concat (or stdout "") "\n" (or stderr "")))
    ;; Otherwise prefer the side that looks like ERT batch output
-   ((and (ert-flow--looks-like-batch-output stdout)
-         (not (ert-flow--looks-like-batch-output stderr)))
+   ((and (test-flow--looks-like-batch-output stdout)
+         (not (test-flow--looks-like-batch-output stderr)))
     stdout)
-   ((and (ert-flow--looks-like-batch-output stderr)
-         (not (ert-flow--looks-like-batch-output stdout)))
+   ((and (test-flow--looks-like-batch-output stderr)
+         (not (test-flow--looks-like-batch-output stdout)))
     stderr)
    ;; Fallbacks
    ((and (stringp stdout) (> (length stdout) 0)) stdout)
    ((and (stringp stderr) (> (length stderr) 0)) stderr)
    (t "")))
 
-(defun ert-flow--sentinel-flush ()
+(defun test-flow--sentinel-flush ()
   "Give the process filter a brief chance to flush remaining output."
   (dotimes (_ 3) (accept-process-output nil 0.05)))
 
-(defun ert-flow--sentinel-read-streams (proc)
+(defun test-flow--sentinel-read-streams (proc)
   "Return plist with session and streams for PROC: (:sess :root :stdout :stderr :stdout-buf :stderr-buf)."
-  (let* ((sess (process-get proc 'ert-flow-session))
-         (root (and sess (ert-flow--session-root sess)))
-         (stdout-buf (or (process-get proc 'ert-flow-stdout-buf)
+  (let* ((sess (process-get proc 'test-flow-session))
+         (root (and sess (test-flow--session-root sess)))
+         (stdout-buf (or (process-get proc 'test-flow-stdout-buf)
                          (process-buffer proc)))
-         (stderr-buf (process-get proc 'ert-flow-stderr-buf))
+         (stderr-buf (process-get proc 'test-flow-stderr-buf))
          (stdout (when (buffer-live-p stdout-buf)
                    (with-current-buffer stdout-buf (buffer-string))))
          (stderr-str (when (buffer-live-p stderr-buf)
@@ -2223,99 +2223,99 @@ Otherwise, fall back to non-empty stdout, then stderr."
           :stdout stdout :stderr stderr-str
           :stdout-buf stdout-buf :stderr-buf stderr-buf)))
 
-(defun ert-flow--sentinel-parse (sess raw)
+(defun test-flow--sentinel-parse (sess raw)
   "Parse RAW according to SESS parser preference. Return (used summary results)."
-  (let* ((pmode (ert-flow--conf sess 'parser ert-flow-parser))
+  (let* ((pmode (test-flow--conf sess 'parser test-flow-parser))
          used summary results)
     (pcase pmode
       ('json
        (setq used 'json)
-       (let ((pair (ert-flow--parse-json-output raw)))
+       (let ((pair (test-flow--parse-json-output raw)))
          (when pair (setq summary (car pair) results (cdr pair)))))
       ('ert-batch
        (setq used 'ert-batch)
-       (let ((pair (ert-flow--parse-batch-output raw)))
+       (let ((pair (test-flow--parse-batch-output raw)))
          (setq summary (car pair) results (cdr pair))))
       (_
-       (let ((pair (ert-flow--parse-json-output raw)))
+       (let ((pair (test-flow--parse-json-output raw)))
          (if pair
              (progn
                (setq used 'json summary (car pair) results (cdr pair)))
            (setq used 'ert-batch)
-           (let ((p2 (ert-flow--parse-batch-output raw)))
+           (let ((p2 (test-flow--parse-batch-output raw)))
              (setq summary (car p2) results (cdr p2)))))))
     (list used summary results)))
 
-(defun ert-flow--sentinel-store (sess used summary results stdout-str stderr-str)
+(defun test-flow--sentinel-store (sess used summary results stdout-str stderr-str)
   "Store RESULTS and SUMMARY into SESS (and globals), trimming STDOUT-STR/STDERR-STR."
   (when sess
     ;; Trim stdout/stderr tails to cap memory
     (when (and (stringp stdout-str)
-               (integerp ert-flow-max-raw-output-bytes)
-               (> (length stdout-str) ert-flow-max-raw-output-bytes))
-      (setq stdout-str (substring stdout-str (- (length stdout-str) ert-flow-max-raw-output-bytes))))
+               (integerp test-flow-max-raw-output-bytes)
+               (> (length stdout-str) test-flow-max-raw-output-bytes))
+      (setq stdout-str (substring stdout-str (- (length stdout-str) test-flow-max-raw-output-bytes))))
     (when (and (stringp stderr-str)
-               (integerp ert-flow-max-raw-output-bytes)
-               (> (length stderr-str) ert-flow-max-raw-output-bytes))
-      (setq stderr-str (substring stderr-str (- (length stderr-str) ert-flow-max-raw-output-bytes))))
-    (ert-flow--set-last-raw-output sess stdout-str)
-    (ert-flow--set-last-stderr-output sess stderr-str)
-    (ert-flow--touch-session sess)
-    (ert-flow--set-last-summary sess summary)
-    (ert-flow--set-last-results sess results)
-    (ert-flow--set-process sess nil)
-    (ert-flow--set-last-parser sess used)
-    (ert-flow--log "store: root=%s parser=%s results=%d total=%s stdout-len=%s stderr-len=%s"
-                   (ert-flow--session-root sess) used (length results)
-                   (or (and (listp summary) (alist-get 'total summary)) "?")
-                   (if (stringp stdout-str) (number-to-string (length stdout-str)) "nil")
-                   (if (stringp stderr-str) (number-to-string (length stderr-str)) "nil")))
-  (setq ert-flow--last-summary summary
-        ert-flow--last-results results
-        ert-flow--last-raw-output stdout-str))
+               (integerp test-flow-max-raw-output-bytes)
+               (> (length stderr-str) test-flow-max-raw-output-bytes))
+      (setq stderr-str (substring stderr-str (- (length stderr-str) test-flow-max-raw-output-bytes))))
+    (test-flow--set-last-raw-output sess stdout-str)
+    (test-flow--set-last-stderr-output sess stderr-str)
+    (test-flow--touch-session sess)
+    (test-flow--set-last-summary sess summary)
+    (test-flow--set-last-results sess results)
+    (test-flow--set-process sess nil)
+    (test-flow--set-last-parser sess used)
+    (test-flow--log "store: root=%s parser=%s results=%d total=%s stdout-len=%s stderr-len=%s"
+                    (test-flow--session-root sess) used (length results)
+                    (or (and (listp summary) (alist-get 'total summary)) "?")
+                    (if (stringp stdout-str) (number-to-string (length stdout-str)) "nil")
+                    (if (stringp stderr-str) (number-to-string (length stderr-str)) "nil")))
+  (setq test-flow--last-summary summary
+        test-flow--last-results results
+        test-flow--last-raw-output stdout-str))
 
-(defun ert-flow--sentinel-render (root)
+(defun test-flow--sentinel-render (root)
   "Re-render panel for ROOT."
-  (let* ((bufname (ert-flow--session-panel-name (or root (ert-flow--project-root)))))
-    (let ((ert-flow--panel-buffer-name bufname))
-      (ert-flow--render))))
+  (let* ((bufname (test-flow--session-panel-name (or root (test-flow--project-root)))))
+    (let ((test-flow--panel-buffer-name bufname))
+      (test-flow--render))))
 
-(defun ert-flow--proc-sentinel (proc event)
+(defun test-flow--proc-sentinel (proc event)
   "Handle process EVENT (session-aware)."
   (condition-case err
       (progn
-        (ert-flow--log "Sentinel: %s" (string-trim (or event "")))
+        (test-flow--log "Sentinel: %s" (string-trim (or event "")))
         (when (and (stringp event)
                    (string-match-p "\\(finished\\|exited\\)" event))
-          (ert-flow--sentinel-flush)
-          (pcase-let* ((plist (ert-flow--sentinel-read-streams proc))
+          (test-flow--sentinel-flush)
+          (pcase-let* ((plist (test-flow--sentinel-read-streams proc))
                        (sess (plist-get plist :sess))
                        (root (plist-get plist :root))
                        (stdout (plist-get plist :stdout))
                        (stderr-str (plist-get plist :stderr))
                        (stdout-buf (plist-get plist :stdout-buf))
                        (stderr-buf (plist-get plist :stderr-buf))
-                       (raw (ert-flow--choose-output-for-parse stdout stderr-str)))
-            (ert-flow--log "sentinel: root=%s label=%s" root (process-get proc 'ert-flow-label))
-            (ert-flow--log "sentinel: stdout len=%s stderr len=%s → using=%s"
-                           (if (stringp stdout) (number-to-string (length stdout)) "nil")
-                           (if (stringp stderr-str) (number-to-string (length stderr-str)) "nil")
-                           (if (eq raw stdout) "stdout" (if (eq raw stderr-str) "stderr" "empty")))
+                       (raw (test-flow--choose-output-for-parse stdout stderr-str)))
+            (test-flow--log "sentinel: root=%s label=%s" root (process-get proc 'test-flow-label))
+            (test-flow--log "sentinel: stdout len=%s stderr len=%s → using=%s"
+                            (if (stringp stdout) (number-to-string (length stdout)) "nil")
+                            (if (stringp stderr-str) (number-to-string (length stderr-str)) "nil")
+                            (if (eq raw stdout) "stdout" (if (eq raw stderr-str) "stderr" "empty")))
             ;; Drop stale (older) runs finishing after a newer one started
-            (let* ((seq (process-get proc 'ert-flow-run-seq))
-                   (latest (and sess (ert-flow--conf sess 'run-seq 0)))
+            (let* ((seq (process-get proc 'test-flow-run-seq))
+                   (latest (and sess (test-flow--conf sess 'run-seq 0)))
                    (outdated (and (numberp seq) (numberp latest) (< seq latest))))
               (if outdated
                   (progn
-                    (ert-flow--log "sentinel: dropping outdated results: seq=%s latest=%s" seq latest)
+                    (test-flow--log "sentinel: dropping outdated results: seq=%s latest=%s" seq latest)
                     (when (buffer-live-p stdout-buf) (kill-buffer stdout-buf))
                     (when (buffer-live-p stderr-buf) (kill-buffer stderr-buf))
-                    (ert-flow--finish-run))
-                (pcase-let ((`(,used ,summary ,results) (ert-flow--sentinel-parse sess raw)))
-                  (ert-flow--log "sentinel parsed: results=%d total=%s (parser=%s)"
-                                 (length results)
-                                 (or (and (listp summary) (alist-get 'total summary)) "?")
-                                 (or used (ert-flow--conf sess 'parser ert-flow-parser)))
+                    (test-flow--finish-run))
+                (pcase-let ((`(,used ,summary ,results) (test-flow--sentinel-parse sess raw)))
+                  (test-flow--log "sentinel parsed: results=%d total=%s (parser=%s)"
+                                  (length results)
+                                  (or (and (listp summary) (alist-get 'total summary)) "?")
+                                  (or used (test-flow--conf sess 'parser test-flow-parser)))
                   ;; If exit was abnormal but F+E==0 (and U>0), dump raw head to diagnose parser miss.
                   (let* ((f (or (and (listp summary) (alist-get 'failed summary)) 0))
                          (e (or (and (listp summary) (alist-get 'error summary)) 0))
@@ -2325,35 +2325,35 @@ Otherwise, fall back to non-empty stdout, then stderr."
                                (= (+ f e) 0)
                                (> u 0))
                       (let ((head (and (stringp raw) (substring raw 0 (min 400 (length raw))))))
-                        (ert-flow--log "anomaly: exit!=0 but F+E=0 (U=%d). raw head:\n%s" u (or head "")))))
-                  (ert-flow--sentinel-store sess used summary results stdout stderr-str)
+                        (test-flow--log "anomaly: exit!=0 but F+E=0 (U=%d). raw head:\n%s" u (or head "")))))
+                  (test-flow--sentinel-store sess used summary results stdout stderr-str)
                   ;; Auto-load coverage (LCOV) if the module is present and enabled.
-                  (when (and (featurep 'ert-flow-coverage)
-                             (boundp 'ert-flow-coverage-auto-load)
-                             ert-flow-coverage-auto-load)
-                    (ignore-errors (ert-flow-coverage-load t)))
+                  (when (and (featurep 'test-flow-coverage)
+                             (boundp 'test-flow-coverage-auto-load)
+                             test-flow-coverage-auto-load)
+                    (ignore-errors (test-flow-coverage-load t)))
                   (when (buffer-live-p stdout-buf) (kill-buffer stdout-buf))
                   (when (buffer-live-p stderr-buf) (kill-buffer stderr-buf))
-                  (ert-flow--sentinel-render root)
-                  (ert-flow--finish-run)))))))
+                  (test-flow--sentinel-render root)
+                  (test-flow--finish-run)))))))
     (error
-     (ert-flow--log "Sentinel error: %S" err))))
+     (test-flow--log "Sentinel error: %S" err))))
 
 ;;;; Runner helpers
 
-(defun ert-flow--ensure-fold-table ()
+(defun test-flow--ensure-fold-table ()
   "Ensure the panel buffer has a fold table initialized."
-  (unless (hash-table-p ert-flow--folded-suites)
-    (setq-local ert-flow--folded-suites (make-hash-table :test 'equal))))
+  (unless (hash-table-p test-flow--folded-suites)
+    (setq-local test-flow--folded-suites (make-hash-table :test 'equal))))
 
 ;;;###autoload
-(defun ert-flow-toggle-group-at-point ()
+(defun test-flow-toggle-group-at-point ()
   "Toggle folding of suite group at point (on header) or the group containing the current test line.
 Does nothing when point is not on a suite header or test line."
   (interactive)
-  (ert-flow--ensure-fold-table)
-  (let* ((suite-here (get-text-property (line-beginning-position) 'ert-flow--suite))
-         (test-here (get-text-property (line-beginning-position) 'ert-flow--result))
+  (test-flow--ensure-fold-table)
+  (let* ((suite-here (get-text-property (line-beginning-position) 'test-flow--suite))
+         (test-here (get-text-property (line-beginning-position) 'test-flow--result))
          (suite (cond
                  (suite-here suite-here)
                  (test-here
@@ -2362,36 +2362,36 @@ Does nothing when point is not on a suite header or test line."
                     (catch 'found
                       (while (not (bobp))
                         (forward-line -1)
-                        (let ((s (get-text-property (line-beginning-position) 'ert-flow--suite)))
+                        (let ((s (get-text-property (line-beginning-position) 'test-flow--suite)))
                           (when s (throw 'found s))))
                       nil)))
                  (t nil))))
     (when suite
-      (let ((cur (gethash suite ert-flow--folded-suites)))
-        (puthash suite (not cur) ert-flow--folded-suites))
+      (let ((cur (gethash suite test-flow--folded-suites)))
+        (puthash suite (not cur) test-flow--folded-suites))
       ;; Re-render the panel corresponding to the current buffer and restore point.
-      (let ((ert-flow--panel-buffer-name (buffer-name)))
-        (setq-local ert-flow--restore-point-suite suite)
-        (ert-flow--render)))))
+      (let ((test-flow--panel-buffer-name (buffer-name)))
+        (setq-local test-flow--restore-point-suite suite)
+        (test-flow--render)))))
 
 ;;;###autoload
-(defun ert-flow-toggle-all-groups (&optional expand)
+(defun test-flow-toggle-all-groups (&optional expand)
   "Toggle folding for all groups. With EXPAND non-nil, unfold all."
   (interactive "P")
-  (ert-flow--ensure-fold-table)
+  (test-flow--ensure-fold-table)
   (save-excursion
     (goto-char (point-min))
     (while (not (eobp))
-      (let ((suite (get-text-property (point) 'ert-flow--suite)))
+      (let ((suite (get-text-property (point) 'test-flow--suite)))
         (when suite
-          (puthash suite (not expand) ert-flow--folded-suites)))
+          (puthash suite (not expand) test-flow--folded-suites)))
       (forward-line 1)))
   ;; Re-render the panel corresponding to the current buffer.
-  (let ((ert-flow--panel-buffer-name (buffer-name)))
-    (ert-flow--render)))
+  (let ((test-flow--panel-buffer-name (buffer-name)))
+    (test-flow--render)))
 
 ;;;###autoload
-(defun ert-flow-detect-runner ()
+(defun test-flow-detect-runner ()
   "Detect a suitable external command for running tests and set it per-session.
 
 Heuristics (in order):
@@ -2401,8 +2401,8 @@ Heuristics (in order):
 
 If multiple candidates are available, prompt to choose."
   (interactive)
-  (let* ((root (ert-flow--project-root))
-         (sess (ert-flow--get-session root))
+  (let* ((root (test-flow--project-root))
+         (sess (test-flow--get-session root))
          (json (expand-file-name "tests/run-tests.el" root))
          (json2 (expand-file-name "test/run-tests.el" root))
          (flake (expand-file-name "flake.nix" root))
@@ -2427,25 +2427,25 @@ If multiple candidates are available, prompt to choose."
             cands))
     (cond
      ((null cands)
-      (user-error "ert-flow: no known test entrypoint found under %s" root))
+      (user-error "test-flow: no known test entrypoint found under %s" root))
      ((= (length cands) 1)
-      (ert-flow--set-conf sess 'external-command (cdar cands))
+      (test-flow--set-conf sess 'external-command (cdar cands))
       ;; keep global in sync as a fallback
-      (setq ert-flow-external-command (cdar cands))
-      (message "ert-flow: session external command set to %S" (cdar cands)))
+      (setq test-flow-external-command (cdar cands))
+      (message "test-flow: session external command set to %S" (cdar cands)))
      (t
       (let* ((choice (completing-read "Choose runner: " (mapcar #'car cands) nil t))
              (cmd (cdr (assoc choice cands))))
-        (ert-flow--set-conf sess 'external-command cmd)
-        (setq ert-flow-external-command cmd)
-        (message "ert-flow: session external command set to %S" cmd))))))
+        (test-flow--set-conf sess 'external-command cmd)
+        (setq test-flow-external-command cmd)
+        (message "test-flow: session external command set to %S" cmd))))))
 
 ;;;; Sessions
 
-(defvar ert-flow--sessions (make-hash-table :test 'equal)
-  "Registry of ert-flow sessions keyed by project root (absolute path).")
+(defvar test-flow--sessions (make-hash-table :test 'equal)
+  "Registry of test-flow sessions keyed by project root (absolute path).")
 
-(cl-defstruct ert-flow--session
+(cl-defstruct test-flow--session
   root
   panel-buf-name
   details-buf-name
@@ -2465,10 +2465,10 @@ If multiple candidates are available, prompt to choose."
 
 ;; Per-session configuration
 
-(defun ert-flow--dir-locals-snapshot (root symbols)
+(defun test-flow--dir-locals-snapshot (root symbols)
   "Return alist (SYMBOL . VALUE) of dir-local values for SYMBOLS under ROOT.
 Creates a temporary buffer visiting a file in ROOT to read .dir-locals."
-  (let ((buf (generate-new-buffer " *ert-flow dirlocals*")))
+  (let ((buf (generate-new-buffer " *test-flow dirlocals*")))
     (unwind-protect
         (with-current-buffer buf
           (setq default-directory (file-name-as-directory (expand-file-name root)))
@@ -2477,28 +2477,28 @@ Creates a temporary buffer visiting a file in ROOT to read .dir-locals."
           (mapcar (lambda (sym) (cons sym (buffer-local-value sym buf))) symbols))
       (kill-buffer buf))))
 
-(defun ert-flow--init-session-config (root)
+(defun test-flow--init-session-config (root)
   "Build initial configuration alist for session at ROOT.
 
 Keys include:
   runner parser external-command external-failed-args-function
   watch-mode debounce-seconds watch-include-regexp watch-exclude-regexp
   file-notify-max-depth panel-side panel-width icons toolbar-style"
-  (let* ((mapping '((runner                      . ert-flow-runner)
-                    (parser                      . ert-flow-parser)
-                    (external-command            . ert-flow-external-command)
-                    (external-failed-args-function . ert-flow-external-failed-args-function)
-                    (watch-mode                  . ert-flow-watch-mode)
-                    (debounce-seconds            . ert-flow-debounce-seconds)
-                    (watch-include-regexp        . ert-flow-watch-include-regexp)
-                    (watch-exclude-regexp        . ert-flow-watch-exclude-regexp)
-                    (file-notify-max-depth       . ert-flow-file-notify-max-depth)
-                    (panel-side                  . ert-flow-panel-side)
-                    (panel-width                 . ert-flow-panel-width)
-                    (icons                       . ert-flow-icons)
-                    (toolbar-style               . ert-flow-toolbar-style)))
+  (let* ((mapping '((runner                      . test-flow-runner)
+                    (parser                      . test-flow-parser)
+                    (external-command            . test-flow-external-command)
+                    (external-failed-args-function . test-flow-external-failed-args-function)
+                    (watch-mode                  . test-flow-watch-mode)
+                    (debounce-seconds            . test-flow-debounce-seconds)
+                    (watch-include-regexp        . test-flow-watch-include-regexp)
+                    (watch-exclude-regexp        . test-flow-watch-exclude-regexp)
+                    (file-notify-max-depth       . test-flow-file-notify-max-depth)
+                    (panel-side                  . test-flow-panel-side)
+                    (panel-width                 . test-flow-panel-width)
+                    (icons                       . test-flow-icons)
+                    (toolbar-style               . test-flow-toolbar-style)))
          (symbols (mapcar #'cdr mapping))
-         (dirvals (condition-case _ (ert-flow--dir-locals-snapshot root symbols) (error nil)))
+         (dirvals (condition-case _ (test-flow--dir-locals-snapshot root symbols) (error nil)))
          (alist nil))
     (dolist (pair mapping)
       (let* ((key (car pair))
@@ -2509,172 +2509,172 @@ Keys include:
         (push (cons key val) alist)))
     (nreverse alist)))
 
-(defun ert-flow--conf (sess key default)
+(defun test-flow--conf (sess key default)
   "Get per-session configuration value for KEY from SESS or DEFAULT."
-  (let* ((cfg (and sess (ert-flow--session-config sess)))
+  (let* ((cfg (and sess (test-flow--session-config sess)))
          (cell (assq key cfg)))
     (if cell (cdr cell) default)))
 
-(defun ert-flow--set-conf (sess key value)
+(defun test-flow--set-conf (sess key value)
   "Set per-session configuration KEY to VALUE in SESS."
-  (let* ((cfg (or (ert-flow--session-config sess) '()))
+  (let* ((cfg (or (test-flow--session-config sess) '()))
          (cell (assq key cfg)))
     (if cell
         (setcdr cell value)
       (push (cons key value) cfg))
-    (setf (ert-flow--session-config sess) cfg)))
+    (setf (test-flow--session-config sess) cfg)))
 
-(defun ert-flow--get-last-parser (sess)
+(defun test-flow--get-last-parser (sess)
   "Safe accessor for session's last parser symbol.
 Returns nil if the slot is missing (older struct instances)."
   (or (condition-case nil
-          (ert-flow--session-last-parser sess)
+          (test-flow--session-last-parser sess)
         (error nil))
-      (ert-flow--conf sess 'last-parser nil)))
+      (test-flow--conf sess 'last-parser nil)))
 
-(defun ert-flow--set-last-parser (sess value)
+(defun test-flow--set-last-parser (sess value)
   "Safe setter for session's last parser symbol.
 If the slot is missing (older struct instances), stores VALUE in session config."
   (condition-case nil
-      (setf (ert-flow--session-last-parser sess) value)
-    (error (ert-flow--set-conf sess 'last-parser value)))
+      (setf (test-flow--session-last-parser sess) value)
+    (error (test-flow--set-conf sess 'last-parser value)))
   value)
 
-(defun ert-flow--get-last-activity-at (sess)
+(defun test-flow--get-last-activity-at (sess)
   "Safe accessor for session's last activity time.
 Returns nil if the slot is missing (older struct instances)."
   (or (condition-case nil
-          (ert-flow--session-last-activity-at sess)
+          (test-flow--session-last-activity-at sess)
         (error nil))
-      (ert-flow--conf sess 'last-activity-at nil)))
+      (test-flow--conf sess 'last-activity-at nil)))
 
-(defun ert-flow--set-last-activity-at (sess value)
+(defun test-flow--set-last-activity-at (sess value)
   "Safe setter for session's last activity time.
 If the slot is missing (older struct instances), stores VALUE in session config."
   (condition-case nil
-      (setf (ert-flow--session-last-activity-at sess) value)
-    (error (ert-flow--set-conf sess 'last-activity-at value)))
+      (setf (test-flow--session-last-activity-at sess) value)
+    (error (test-flow--set-conf sess 'last-activity-at value)))
   value)
 
 ;; Safe getter/setter for watch-enabled
-(defun ert-flow--get-watch-enabled (sess)
+(defun test-flow--get-watch-enabled (sess)
   (or (condition-case nil
-          (ert-flow--session-watch-enabled sess)
+          (test-flow--session-watch-enabled sess)
         (error nil))
-      (ert-flow--conf sess 'watch-enabled nil)))
+      (test-flow--conf sess 'watch-enabled nil)))
 
-(defun ert-flow--set-watch-enabled (sess value)
+(defun test-flow--set-watch-enabled (sess value)
   (condition-case nil
-      (setf (ert-flow--session-watch-enabled sess) value)
+      (setf (test-flow--session-watch-enabled sess) value)
     (error nil))
-  (ert-flow--set-conf sess 'watch-enabled value)
+  (test-flow--set-conf sess 'watch-enabled value)
   value)
 
 ;; Safe session getters/setters for volatile fields: summary/results/stdout/stderr/process.
 ;; They write through to struct slots when possible and always mirror into session config.
-(defun ert-flow--get-last-summary (sess)
+(defun test-flow--get-last-summary (sess)
   (or (condition-case nil
-          (ert-flow--session-last-summary sess)
+          (test-flow--session-last-summary sess)
         (error nil))
-      (ert-flow--conf sess 'last-summary nil)))
+      (test-flow--conf sess 'last-summary nil)))
 
-(defun ert-flow--set-last-summary (sess value)
+(defun test-flow--set-last-summary (sess value)
   (condition-case nil
-      (setf (ert-flow--session-last-summary sess) value)
+      (setf (test-flow--session-last-summary sess) value)
     (error nil))
-  (ert-flow--set-conf sess 'last-summary value)
+  (test-flow--set-conf sess 'last-summary value)
   value)
 
-(defun ert-flow--get-last-results (sess)
+(defun test-flow--get-last-results (sess)
   (or (condition-case nil
-          (ert-flow--session-last-results sess)
+          (test-flow--session-last-results sess)
         (error nil))
-      (ert-flow--conf sess 'last-results nil)))
+      (test-flow--conf sess 'last-results nil)))
 
-(defun ert-flow--set-last-results (sess value)
+(defun test-flow--set-last-results (sess value)
   (condition-case nil
-      (setf (ert-flow--session-last-results sess) value)
+      (setf (test-flow--session-last-results sess) value)
     (error nil))
-  (ert-flow--set-conf sess 'last-results value)
+  (test-flow--set-conf sess 'last-results value)
   value)
 
-(defun ert-flow--get-last-raw-output (sess)
+(defun test-flow--get-last-raw-output (sess)
   (or (condition-case nil
-          (ert-flow--session-last-raw-output sess)
+          (test-flow--session-last-raw-output sess)
         (error nil))
-      (ert-flow--conf sess 'last-raw-output nil)))
+      (test-flow--conf sess 'last-raw-output nil)))
 
-(defun ert-flow--set-last-raw-output (sess value)
+(defun test-flow--set-last-raw-output (sess value)
   (condition-case nil
-      (setf (ert-flow--session-last-raw-output sess) value)
+      (setf (test-flow--session-last-raw-output sess) value)
     (error nil))
-  (ert-flow--set-conf sess 'last-raw-output value)
+  (test-flow--set-conf sess 'last-raw-output value)
   value)
 
-(defun ert-flow--get-last-stderr-output (sess)
+(defun test-flow--get-last-stderr-output (sess)
   (or (condition-case nil
-          (ert-flow--session-last-stderr-output sess)
+          (test-flow--session-last-stderr-output sess)
         (error nil))
-      (ert-flow--conf sess 'last-stderr-output nil)))
+      (test-flow--conf sess 'last-stderr-output nil)))
 
-(defun ert-flow--set-last-stderr-output (sess value)
+(defun test-flow--set-last-stderr-output (sess value)
   (condition-case nil
-      (setf (ert-flow--session-last-stderr-output sess) value)
+      (setf (test-flow--session-last-stderr-output sess) value)
     (error nil))
-  (ert-flow--set-conf sess 'last-stderr-output value)
+  (test-flow--set-conf sess 'last-stderr-output value)
   value)
 
-(defun ert-flow--get-process (sess)
+(defun test-flow--get-process (sess)
   (or (condition-case nil
-          (ert-flow--session-process sess)
+          (test-flow--session-process sess)
         (error nil))
-      (ert-flow--conf sess 'process nil)))
+      (test-flow--conf sess 'process nil)))
 
-(defun ert-flow--set-process (sess value)
+(defun test-flow--set-process (sess value)
   (condition-case nil
-      (setf (ert-flow--session-process sess) value)
+      (setf (test-flow--session-process sess) value)
     (error nil))
-  (ert-flow--set-conf sess 'process value)
+  (test-flow--set-conf sess 'process value)
   value)
 
-(defvar-local ert-flow--folded-suites nil
+(defvar-local test-flow--folded-suites nil
   "Hash-table of folded suite names (buffer-local in panel buffers).")
 
-(defvar-local ert-flow--panel-status-filter nil
+(defvar-local test-flow--panel-status-filter nil
   "If non-nil, a list of status symbols to display (e.g., '(pass fail)).")
 
-(defvar-local ert-flow--panel-name-regexp nil
+(defvar-local test-flow--panel-name-regexp nil
   "If non-nil, only tests whose names match this regexp are displayed.")
 
-(defvar-local ert-flow--panel-tags-filter nil
+(defvar-local test-flow--panel-tags-filter nil
   "If non-nil, a list of tag strings; only tests having any of these tags are displayed.")
 
-(defvar-local ert-flow--restore-point-suite nil
+(defvar-local test-flow--restore-point-suite nil
   "If non-nil, name of the suite to move point to after rendering.")
 
-(defun ert-flow--default-session-name (root)
+(defun test-flow--default-session-name (root)
   "Return default human-friendly session name for ROOT."
   (file-name-nondirectory (directory-file-name root)))
 
-(defun ert-flow--session-panel-name (root)
+(defun test-flow--session-panel-name (root)
   "Return panel buffer name for project ROOT."
-  (let ((name (funcall ert-flow-session-naming-function root)))
-    (format "*ert-flow: %s*" name)))
+  (let ((name (funcall test-flow-session-naming-function root)))
+    (format "*test-flow: %s*" name)))
 
-(defun ert-flow--session-details-name (root)
+(defun test-flow--session-details-name (root)
   "Return details buffer name for project ROOT."
-  (let ((name (funcall ert-flow-session-naming-function root)))
-    (format "*ert-flow: %s: details*" name)))
+  (let ((name (funcall test-flow-session-naming-function root)))
+    (format "*test-flow: %s: details*" name)))
 
-(defun ert-flow--get-session (&optional root)
+(defun test-flow--get-session (&optional root)
   "Get or create a session for ROOT (current project if nil)."
-  (let* ((r (or root (ert-flow--project-root)))
+  (let* ((r (or root (test-flow--project-root)))
          (abs (file-name-as-directory (expand-file-name r))))
-    (or (gethash abs ert-flow--sessions)
-        (let* ((sess (make-ert-flow--session
+    (or (gethash abs test-flow--sessions)
+        (let* ((sess (make-test-flow--session
                       :root abs
-                      :panel-buf-name (ert-flow--session-panel-name abs)
-                      :details-buf-name (ert-flow--session-details-name abs)
+                      :panel-buf-name (test-flow--session-panel-name abs)
+                      :details-buf-name (test-flow--session-details-name abs)
                       :last-raw-output nil
                       :last-stderr-output nil
                       :last-results nil
@@ -2683,38 +2683,38 @@ If the slot is missing (older struct instances), stores VALUE in session config.
                       :debounce-timer nil
                       :watch-enabled nil
                       :file-notify-handles nil
-                      :config (ert-flow--init-session-config abs))))
-          (puthash abs sess ert-flow--sessions)
-          (ert-flow--log "session: created root=%s panel=%s" abs (ert-flow--session-panel-buf-name sess))
+                      :config (test-flow--init-session-config abs))))
+          (puthash abs sess test-flow--sessions)
+          (test-flow--log "session: created root=%s panel=%s" abs (test-flow--session-panel-buf-name sess))
           sess))))
 
-(defun ert-flow--session-list ()
+(defun test-flow--session-list ()
   "Return a list of current sessions."
   (let (acc)
-    (maphash (lambda (_ s) (push s acc)) ert-flow--sessions)
+    (maphash (lambda (_ s) (push s acc)) test-flow--sessions)
     acc))
 
 ;;;###autoload
-(defun ert-flow-switch-session ()
-  "Switch focus to another ert-flow session's panel."
+(defun test-flow-switch-session ()
+  "Switch focus to another test-flow session's panel."
   (interactive)
   (let* ((pairs (let (acc)
                   (maphash
                    (lambda (_root s)
-                     (push (cons (ert-flow--session-panel-buf-name s)
-                                 (ert-flow--session-root s))
+                     (push (cons (test-flow--session-panel-buf-name s)
+                                 (test-flow--session-root s))
                            acc))
-                   ert-flow--sessions)
+                   test-flow--sessions)
                   (nreverse acc))))
     (if (null pairs)
-        (user-error "ert-flow: no sessions")
+        (user-error "test-flow: no sessions")
       (let* ((choice (completing-read "Switch to session: " (mapcar #'car pairs) nil t))
              (root (cdr (assoc choice pairs))))
-        (let ((buf (get-buffer (ert-flow--session-panel-name root))))
-          (unless buf (user-error "ert-flow: panel not found for %s" root))
-          (let* ((sess (ert-flow--get-session root))
-                 (side (ert-flow--conf sess 'panel-side ert-flow-panel-side))
-                 (width (ert-flow--conf sess 'panel-width ert-flow-panel-width))
+        (let ((buf (get-buffer (test-flow--session-panel-name root))))
+          (unless buf (user-error "test-flow: panel not found for %s" root))
+          (let* ((sess (test-flow--get-session root))
+                 (side (test-flow--conf sess 'panel-side test-flow-panel-side))
+                 (width (test-flow--conf sess 'panel-width test-flow-panel-width))
                  (win (display-buffer-in-side-window
                        buf
                        `((side . ,side)
@@ -2722,49 +2722,49 @@ If the slot is missing (older struct instances), stores VALUE in session config.
             (select-window win)))))))
 
 ;;;###autoload
-(defun ert-flow-kill-session (&optional root)
-  "Kill ert-flow session for ROOT (current project if nil).
+(defun test-flow-kill-session (&optional root)
+  "Kill test-flow session for ROOT (current project if nil).
 
 Stops watcher and process, cancels timers, and removes the session from registry."
   (interactive)
-  (let* ((r (or root (ert-flow--project-root)))
-         (sess (gethash r ert-flow--sessions)))
+  (let* ((r (or root (test-flow--project-root)))
+         (sess (gethash r test-flow--sessions)))
     (unless sess
-      (user-error "ert-flow: no session for %s" r))
+      (user-error "test-flow: no session for %s" r))
     ;; Stop process
-    (when (process-live-p (ert-flow--session-process sess))
-      (ignore-errors (kill-process (ert-flow--session-process sess))))
+    (when (process-live-p (test-flow--session-process sess))
+      (ignore-errors (kill-process (test-flow--session-process sess))))
     ;; Disable watch
-    (when (ert-flow--get-watch-enabled sess)
-      (ert-flow--disable-watch sess))
+    (when (test-flow--get-watch-enabled sess)
+      (test-flow--disable-watch sess))
     ;; Cancel debounce
-    (when (timerp (ert-flow--session-debounce-timer sess))
-      (cancel-timer (ert-flow--session-debounce-timer sess)))
+    (when (timerp (test-flow--session-debounce-timer sess))
+      (cancel-timer (test-flow--session-debounce-timer sess)))
     ;; Remove from registry
-    (remhash r ert-flow--sessions)
-    (message "ert-flow: killed session %s" r)))
+    (remhash r test-flow--sessions)
+    (message "test-flow: killed session %s" r)))
 
 ;;;###autoload
-(defun ert-flow-kill-all-sessions ()
-  "Kill all ert-flow sessions."
+(defun test-flow-kill-all-sessions ()
+  "Kill all test-flow sessions."
   (interactive)
-  (maphash (lambda (r _s) (ignore-errors (ert-flow-kill-session r))) ert-flow--sessions)
-  (clrhash ert-flow--sessions)
-  (message "ert-flow: killed all sessions"))
+  (maphash (lambda (r _s) (ignore-errors (test-flow-kill-session r))) test-flow--sessions)
+  (clrhash test-flow--sessions)
+  (message "test-flow: killed all sessions"))
 
 ;;;###autoload
-(defun ert-flow--list-sessions-insert-header ()
+(defun test-flow--list-sessions-insert-header ()
   "Insert header for sessions list buffer."
-  (insert (propertize "ert-flow sessions\n\n" 'face 'bold)))
+  (insert (propertize "test-flow sessions\n\n" 'face 'bold)))
 
-(defun ert-flow--list-sessions-insert-row (s)
+(defun test-flow--list-sessions-insert-row (s)
   "Insert a single row for session S in the sessions list."
-  (let* ((root (ert-flow--session-root s))
-         (panel (ert-flow--session-panel-buf-name s))
-         (watch (if (ert-flow--get-watch-enabled s) "On" "Off"))
-         (runner (ert-flow--conf s 'runner ert-flow-runner))
-         (watch-mode (ert-flow--conf s 'watch-mode ert-flow-watch-mode))
-         (proc (and (process-live-p (ert-flow--session-process s)) "active")))
+  (let* ((root (test-flow--session-root s))
+         (panel (test-flow--session-panel-buf-name s))
+         (watch (if (test-flow--get-watch-enabled s) "On" "Off"))
+         (runner (test-flow--conf s 'runner test-flow-runner))
+         (watch-mode (test-flow--conf s 'watch-mode test-flow-watch-mode))
+         (proc (and (process-live-p (test-flow--session-process s)) "active")))
     (insert (propertize (format "- %s\n" panel) 'face 'bold))
     (insert (format "  Runner: %s | Mode: %s | Watch: %s | Proc: %s\n"
                     (if (eq runner 'in-emacs-ert) "in-emacs" "external")
@@ -2776,24 +2776,24 @@ Stops watcher and process, cancels timers, and removes the session from registry
                         'help-echo "Open panel"
                         'follow-link t
                         'action (lambda (_)
-                                  (let* ((buf (get-buffer (ert-flow--session-panel-name root)))
-                                         (sess (ert-flow--get-session root))
-                                         (side (ert-flow--conf sess 'panel-side ert-flow-panel-side))
-                                         (width (ert-flow--conf sess 'panel-width ert-flow-panel-width)))
+                                  (let* ((buf (get-buffer (test-flow--session-panel-name root)))
+                                         (sess (test-flow--get-session root))
+                                         (side (test-flow--conf sess 'panel-side test-flow-panel-side))
+                                         (width (test-flow--conf sess 'panel-width test-flow-panel-width)))
                                     (unless buf
-                                      (setq buf (get-buffer-create (ert-flow--session-panel-name root))))
+                                      (setq buf (get-buffer-create (test-flow--session-panel-name root))))
                                     (display-buffer-in-side-window
                                      buf `((side . ,side) (window-width . ,width))))))
     (insert "  ")
-    (insert-text-button (format "[Watch %s]" (if (ert-flow--session-watch-enabled s) "Off" "On"))
+    (insert-text-button (format "[Watch %s]" (if (test-flow--session-watch-enabled s) "Off" "On"))
                         'face 'link
                         'mouse-face 'highlight
                         'help-echo "Toggle watch for this session"
                         'follow-link t
                         'action (lambda (_)
                                   (let ((default-directory root))
-                                    (ert-flow-toggle-watch)
-                                    (ert-flow-list-sessions))))
+                                    (test-flow-toggle-watch)
+                                    (test-flow-list-sessions))))
     (insert "  ")
     (insert-text-button "[Kill]"
                         'face 'link
@@ -2801,12 +2801,12 @@ Stops watcher and process, cancels timers, and removes the session from registry
                         'help-echo "Kill this session"
                         'follow-link t
                         'action (lambda (_)
-                                  (ert-flow-kill-session root)
-                                  (ert-flow-list-sessions)))
+                                  (test-flow-kill-session root)
+                                  (test-flow-list-sessions)))
     (insert "\n\n")))
 
 ;;;###autoload
-(defun ert-flow-list-sessions ()
+(defun test-flow-list-sessions ()
   "List current sessions in a temporary buffer with quick actions.
 
 Each row shows:
@@ -2815,37 +2815,37 @@ Each row shows:
 - watch On/Off and process state
 - buttons: [Open] [Watch On/Off] [Kill]"
   (interactive)
-  (let ((buf (get-buffer-create "*ert-flow: sessions*")))
+  (let ((buf (get-buffer-create "*test-flow: sessions*")))
     (with-current-buffer buf
       (let ((inhibit-read-only t))
         (erase-buffer)
         (special-mode)
-        (ert-flow--list-sessions-insert-header)
-        (if (= (hash-table-count ert-flow--sessions) 0)
+        (test-flow--list-sessions-insert-header)
+        (if (= (hash-table-count test-flow--sessions) 0)
             (insert "No active sessions.\n")
-          (maphash (lambda (_root s) (ert-flow--list-sessions-insert-row s))
-                   ert-flow--sessions))))
+          (maphash (lambda (_root s) (test-flow--list-sessions-insert-row s))
+                   test-flow--sessions))))
     (display-buffer buf)))
 
 ;;;###autoload
-(defun ert-flow--dashboard-insert-header ()
+(defun test-flow--dashboard-insert-header ()
   "Insert dashboard header section."
-  (insert (propertize "ert-flow dashboard\n\n" 'face 'bold))
+  (insert (propertize "test-flow dashboard\n\n" 'face 'bold))
   (insert (format "Processes: active %d, queued %d\n"
-                  ert-flow--active-run-count
-                  (length ert-flow--run-queue)))
-  (insert (format "Sessions: %d\n\n" (hash-table-count ert-flow--sessions))))
+                  test-flow--active-run-count
+                  (length test-flow--run-queue)))
+  (insert (format "Sessions: %d\n\n" (hash-table-count test-flow--sessions))))
 
-(defun ert-flow--dashboard-insert-session-row (s)
+(defun test-flow--dashboard-insert-session-row (s)
   "Insert a single dashboard row for session S."
-  (let* ((root (ert-flow--session-root s))
-         (panel (ert-flow--session-panel-buf-name s))
+  (let* ((root (test-flow--session-root s))
+         (panel (test-flow--session-panel-buf-name s))
          (sess-name (file-name-nondirectory (directory-file-name root)))
-         (watch-on (ert-flow--get-watch-enabled s))
-         (runner (ert-flow--conf s 'runner ert-flow-runner))
-         (watch-mode (ert-flow--conf s 'watch-mode ert-flow-watch-mode))
-         (proc (and (process-live-p (ert-flow--session-process s)) "active"))
-         (sum (ert-flow--session-last-summary s))
+         (watch-on (test-flow--get-watch-enabled s))
+         (runner (test-flow--conf s 'runner test-flow-runner))
+         (watch-mode (test-flow--conf s 'watch-mode test-flow-watch-mode))
+         (proc (and (process-live-p (test-flow--session-process s)) "active"))
+         (sum (test-flow--session-last-summary s))
          (p (or (and sum (alist-get 'passed sum)) 0))
          (f (or (and sum (alist-get 'failed sum)) 0))
          (e (or (and sum (alist-get 'error sum)) 0))
@@ -2861,12 +2861,12 @@ Each row shows:
                         'face 'link 'mouse-face 'highlight 'follow-link t
                         'help-echo "Open panel"
                         'action (lambda (_)
-                                  (let* ((buf (get-buffer (ert-flow--session-panel-name root)))
-                                         (sess (ert-flow--get-session root))
-                                         (side (ert-flow--conf sess 'panel-side ert-flow-panel-side))
-                                         (width (ert-flow--conf sess 'panel-width ert-flow-panel-width)))
+                                  (let* ((buf (get-buffer (test-flow--session-panel-name root)))
+                                         (sess (test-flow--get-session root))
+                                         (side (test-flow--conf sess 'panel-side test-flow-panel-side))
+                                         (width (test-flow--conf sess 'panel-width test-flow-panel-width)))
                                     (unless buf
-                                      (setq buf (get-buffer-create (ert-flow--session-panel-name root))))
+                                      (setq buf (get-buffer-create (test-flow--session-panel-name root))))
                                     (display-buffer-in-side-window
                                      buf `((side . ,side) (window-width . ,width))))))
     (insert "  ")
@@ -2875,28 +2875,28 @@ Each row shows:
                         'help-echo "Run tests for this session"
                         'action (lambda (_)
                                   (let ((default-directory root))
-                                    (ert-flow-run)
-                                    (message "ert-flow: scheduled run for %s" root))))
+                                    (test-flow-run)
+                                    (message "test-flow: scheduled run for %s" root))))
     (insert "  ")
     (insert-text-button (format "[Watch %s]" (if watch-on "Off" "On"))
                         'face 'link 'mouse-face 'highlight 'follow-link t
                         'help-echo "Toggle watch"
                         'action (lambda (_)
                                   (let ((default-directory root))
-                                    (ert-flow-toggle-watch)
-                                    (ert-flow-dashboard))))
+                                    (test-flow-toggle-watch)
+                                    (test-flow-dashboard))))
     (insert "  ")
     (insert-text-button "[Kill]"
                         'face 'link 'mouse-face 'highlight 'follow-link t
                         'help-echo "Kill this session"
                         'action (lambda (_)
-                                  (ert-flow-kill-session root)
-                                  (ert-flow-dashboard)))
+                                  (test-flow-kill-session root)
+                                  (test-flow-dashboard)))
     (insert "\n\n")))
 
 ;;;###autoload
-(defun ert-flow-dashboard ()
-  "Show a summary dashboard across all ert-flow sessions with quick actions.
+(defun test-flow-dashboard ()
+  "Show a summary dashboard across all test-flow sessions with quick actions.
 
 Displays:
 - Global active/queued process counts
@@ -2905,78 +2905,78 @@ Displays:
 
 This view is read-only and uses text buttons for actions."
   (interactive)
-  (let ((buf (get-buffer-create "*ert-flow: dashboard*")))
+  (let ((buf (get-buffer-create "*test-flow: dashboard*")))
     (with-current-buffer buf
       (let ((inhibit-read-only t))
         (erase-buffer)
         (special-mode)
-        (ert-flow--dashboard-insert-header)
-        (if (= (hash-table-count ert-flow--sessions) 0)
+        (test-flow--dashboard-insert-header)
+        (if (= (hash-table-count test-flow--sessions) 0)
             (insert "No active sessions.\n")
-          (maphash (lambda (_root s) (ert-flow--dashboard-insert-session-row s))
-                   ert-flow--sessions))))
+          (maphash (lambda (_root s) (test-flow--dashboard-insert-session-row s))
+                   test-flow--sessions))))
     (display-buffer buf)))
 
 ;;;; Watcher
 
-(defun ert-flow--project-root ()
+(defun test-flow--project-root ()
   "Return current project root directory as a string, or `default-directory'."
   (let* ((proj (project-current nil default-directory))
          (res (if proj
                   (expand-file-name (project-root proj))
                 (expand-file-name default-directory))))
-    (ert-flow--log "project-root: %s (proj=%s)" res (and proj (project-root proj)))
+    (test-flow--log "project-root: %s (proj=%s)" res (and proj (project-root proj)))
     res))
 
-(defun ert-flow--buffer-in-project-p (buf)
+(defun test-flow--buffer-in-project-p (buf)
   "Return non-nil if BUF's file is under the current project root."
   (when-let* ((file (buffer-local-value 'buffer-file-name buf)))
-    (let* ((root (file-name-as-directory (ert-flow--project-root)))
+    (let* ((root (file-name-as-directory (test-flow--project-root)))
            (abs  (expand-file-name file)))
       (string-prefix-p root abs))))
 
-(defun ert-flow--schedule-run (sess)
+(defun test-flow--schedule-run (sess)
   "Schedule an auto run for SESS with debounce."
-  (ert-flow--touch-session sess)
-  (when (timerp (ert-flow--session-debounce-timer sess))
-    (cancel-timer (ert-flow--session-debounce-timer sess)))
-  (let ((delay (ert-flow--conf sess 'debounce-seconds ert-flow-debounce-seconds)))
-    (setf (ert-flow--session-debounce-timer sess)
+  (test-flow--touch-session sess)
+  (when (timerp (test-flow--session-debounce-timer sess))
+    (cancel-timer (test-flow--session-debounce-timer sess)))
+  (let ((delay (test-flow--conf sess 'debounce-seconds test-flow-debounce-seconds)))
+    (setf (test-flow--session-debounce-timer sess)
           (run-at-time
            delay
            nil
            (lambda ()
-             (ert-flow--touch-session sess)
-             (let ((root (ert-flow--session-root sess)))
-               (ert-flow--log "debounce: running for %s" root)
+             (test-flow--touch-session sess)
+             (let ((root (test-flow--session-root sess)))
+               (test-flow--log "debounce: running for %s" root)
                (with-temp-buffer
                  (cd root)
-                 (ert-flow-run))))))))
+                 (test-flow-run))))))))
 
-(defun ert-flow--after-save-hook ()
+(defun test-flow--after-save-hook ()
   "Trigger tests after saving a relevant file when watch is enabled (session-aware)."
   (let ((file (buffer-file-name)))
     (when file
-      (let* ((root (ert-flow--project-root))
-             (sess (ert-flow--get-session root))
-             (wmode (ert-flow--conf sess 'watch-mode ert-flow-watch-mode)))
+      (let* ((root (test-flow--project-root))
+             (sess (test-flow--get-session root))
+             (wmode (test-flow--conf sess 'watch-mode test-flow-watch-mode)))
         (when (and (eq wmode 'after-save)
-                   (ert-flow--get-watch-enabled sess))
-          (let ((ert-flow-watch-include-regexp (ert-flow--conf sess 'watch-include-regexp ert-flow-watch-include-regexp))
-                (ert-flow-watch-exclude-regexp (ert-flow--conf sess 'watch-exclude-regexp ert-flow-watch-exclude-regexp)))
-            (when (ert-flow--file-event-eligible-p file)
-              (ert-flow--log "after-save: scheduling run for %s" file)
-              (ert-flow--schedule-run sess))))))))
+                   (test-flow--get-watch-enabled sess))
+          (let ((test-flow-watch-include-regexp (test-flow--conf sess 'watch-include-regexp test-flow-watch-include-regexp))
+                (test-flow-watch-exclude-regexp (test-flow--conf sess 'watch-exclude-regexp test-flow-watch-exclude-regexp)))
+            (when (test-flow--file-event-eligible-p file)
+              (test-flow--log "after-save: scheduling run for %s" file)
+              (test-flow--schedule-run sess))))))))
 
-(defun ert-flow--file-event-eligible-p (file)
+(defun test-flow--file-event-eligible-p (file)
   "Return non-nil if FILE should trigger a run according to include/exclude."
   (and (stringp file)
-       (or (null ert-flow-watch-include-regexp)
-           (string-match-p ert-flow-watch-include-regexp file))
-       (not (and ert-flow-watch-exclude-regexp
-                 (string-match-p ert-flow-watch-exclude-regexp file)))))
+       (or (null test-flow-watch-include-regexp)
+           (string-match-p test-flow-watch-include-regexp file))
+       (not (and test-flow-watch-exclude-regexp
+                 (string-match-p test-flow-watch-exclude-regexp file)))))
 
-(defun ert-flow--collect-dirs (root max-depth)
+(defun test-flow--collect-dirs (root max-depth)
   "Return list of directories under ROOT up to MAX-DEPTH (inclusive ROOT)."
   (let (acc)
     (cl-labels
@@ -2986,33 +2986,33 @@ This view is read-only and uses text buttons for actions."
              (dolist (f (directory-files dir t "^[^.]" t))
                (when (file-directory-p f)
                  (let ((f-dir (file-name-as-directory f)))
-                   (unless (and ert-flow-watch-exclude-regexp
-                                (string-match-p ert-flow-watch-exclude-regexp f-dir))
+                   (unless (and test-flow-watch-exclude-regexp
+                                (string-match-p test-flow-watch-exclude-regexp f-dir))
                      (walk f (1- depth)))))))))
       (walk root max-depth))
     (cl-remove-duplicates acc :test #'string-equal)))
 
-(defun ert-flow--file-notify-callback (event)
+(defun test-flow--file-notify-callback (event)
   "Handle file-notify EVENT: schedule a run for interesting changes."
   (condition-case err
       (pcase event
         (`(,_ ,action ,file . ,_)
          (when (memq action '(created changed deleted renamed moved attribute-changed))
-           (when (ert-flow--file-event-eligible-p (ignore-errors (file-truename file)))
-             (ert-flow--log "file-notify: %s %s" action file)
-             (ert-flow--schedule-run)))))
-    (error (ert-flow--log "file-notify callback error: %S" err))))
+           (when (test-flow--file-event-eligible-p (ignore-errors (file-truename file)))
+             (test-flow--log "file-notify: %s %s" action file)
+             (test-flow--schedule-run)))))
+    (error (test-flow--log "file-notify callback error: %S" err))))
 
-(defun ert-flow--setup-file-notify (sess)
+(defun test-flow--setup-file-notify (sess)
   "Start file-notify watchers for project directories for SESS."
-  (let* ((root (ert-flow--session-root sess))
+  (let* ((root (test-flow--session-root sess))
          (handles nil)
-         (depth (ert-flow--conf sess 'file-notify-max-depth ert-flow-file-notify-max-depth))
-         (inc (ert-flow--conf sess 'watch-include-regexp ert-flow-watch-include-regexp))
-         (exc (ert-flow--conf sess 'watch-exclude-regexp ert-flow-watch-exclude-regexp)))
-    (ert-flow--touch-session sess)
-    (let ((ert-flow-watch-exclude-regexp exc))
-      (dolist (dir (ert-flow--collect-dirs root depth))
+         (depth (test-flow--conf sess 'file-notify-max-depth test-flow-file-notify-max-depth))
+         (inc (test-flow--conf sess 'watch-include-regexp test-flow-watch-include-regexp))
+         (exc (test-flow--conf sess 'watch-exclude-regexp test-flow-watch-exclude-regexp)))
+    (test-flow--touch-session sess)
+    (let ((test-flow-watch-exclude-regexp exc))
+      (dolist (dir (test-flow--collect-dirs root depth))
         (when (file-directory-p dir)
           (let ((h
                  (file-notify-add-watch
@@ -3022,93 +3022,93 @@ This view is read-only and uses text buttons for actions."
                         (pcase event
                           (`(,_ ,action ,path . ,_)
                            (when (memq action '(created changed deleted renamed moved attribute-changed))
-                             (let ((ert-flow-watch-include-regexp inc)
-                                   (ert-flow-watch-exclude-regexp exc))
-                               (when (ert-flow--file-event-eligible-p (ignore-errors (file-truename path)))
-                                 (ert-flow--log "file-notify[%s]: %s %s"
-                                                (file-name-nondirectory (directory-file-name root))
-                                                action path)
-                                 (ert-flow--schedule-run sess))))))
-                      (error (ert-flow--log "file-notify callback error: %S" err)))))))
+                             (let ((test-flow-watch-include-regexp inc)
+                                   (test-flow-watch-exclude-regexp exc))
+                               (when (test-flow--file-event-eligible-p (ignore-errors (file-truename path)))
+                                 (test-flow--log "file-notify[%s]: %s %s"
+                                                 (file-name-nondirectory (directory-file-name root))
+                                                 action path)
+                                 (test-flow--schedule-run sess))))))
+                      (error (test-flow--log "file-notify callback error: %S" err)))))))
             (push h handles)))))
-    (setf (ert-flow--session-file-notify-handles sess) (nreverse handles))))
+    (setf (test-flow--session-file-notify-handles sess) (nreverse handles))))
 
-(defun ert-flow--teardown-file-notify (sess)
+(defun test-flow--teardown-file-notify (sess)
   "Stop all active file-notify watchers for SESS."
-  (dolist (h (ert-flow--session-file-notify-handles sess))
+  (dolist (h (test-flow--session-file-notify-handles sess))
     (ignore-errors (file-notify-rm-watch h)))
-  (setf (ert-flow--session-file-notify-handles sess) nil))
+  (setf (test-flow--session-file-notify-handles sess) nil))
 
-(defun ert-flow--enable-watch (sess)
+(defun test-flow--enable-watch (sess)
   "Enable the configured watch mode for SESS."
-  (ert-flow--touch-session sess)
-  (pcase (ert-flow--conf sess 'watch-mode ert-flow-watch-mode)
+  (test-flow--touch-session sess)
+  (pcase (test-flow--conf sess 'watch-mode test-flow-watch-mode)
     ('after-save
-     (unless (member #'ert-flow--after-save-hook after-save-hook)
-       (add-hook 'after-save-hook #'ert-flow--after-save-hook))
-     (cl-incf ert-flow--active-after-save-count))
+     (unless (member #'test-flow--after-save-hook after-save-hook)
+       (add-hook 'after-save-hook #'test-flow--after-save-hook))
+     (cl-incf test-flow--active-after-save-count))
     ('file-notify
-     (ert-flow--setup-file-notify sess))
+     (test-flow--setup-file-notify sess))
     (_ nil))
-  (ert-flow--ensure-idle-gc-timer))
+  (test-flow--ensure-idle-gc-timer))
 
-(defun ert-flow--disable-watch (sess)
+(defun test-flow--disable-watch (sess)
   "Disable watch mode for SESS and cancel any pending timers."
-  (pcase (ert-flow--conf sess 'watch-mode ert-flow-watch-mode)
+  (pcase (test-flow--conf sess 'watch-mode test-flow-watch-mode)
     ('after-save
-     (when (> ert-flow--active-after-save-count 0)
-       (cl-decf ert-flow--active-after-save-count)
-       (when (<= ert-flow--active-after-save-count 0)
-         (remove-hook 'after-save-hook #'ert-flow--after-save-hook))))
+     (when (> test-flow--active-after-save-count 0)
+       (cl-decf test-flow--active-after-save-count)
+       (when (<= test-flow--active-after-save-count 0)
+         (remove-hook 'after-save-hook #'test-flow--after-save-hook))))
     ('file-notify
-     (ert-flow--teardown-file-notify sess)))
-  (when (timerp (ert-flow--session-debounce-timer sess))
-    (cancel-timer (ert-flow--session-debounce-timer sess)))
-  (setf (ert-flow--session-debounce-timer sess) nil)
-  (ert-flow--cancel-idle-gc-timer-if-unused))
+     (test-flow--teardown-file-notify sess)))
+  (when (timerp (test-flow--session-debounce-timer sess))
+    (cancel-timer (test-flow--session-debounce-timer sess)))
+  (setf (test-flow--session-debounce-timer sess) nil)
+  (test-flow--cancel-idle-gc-timer-if-unused))
 
 ;;;###autoload
-(defun ert-flow-toggle-watch ()
+(defun test-flow-toggle-watch ()
   "Toggle automatic test running (watch) for the current session (panel-aware)."
   (interactive)
-  (let* ((sess (or (and (eq major-mode 'ert-flow-panel-mode)
-                        (ignore-errors (ert-flow--find-panel-session)))
-                   (ert-flow--get-session (ert-flow--project-root))))
-         (root (ert-flow--session-root sess))
-         (old (ert-flow--get-watch-enabled sess))
+  (let* ((sess (or (and (eq major-mode 'test-flow-panel-mode)
+                        (ignore-errors (test-flow--find-panel-session)))
+                   (test-flow--get-session (test-flow--project-root))))
+         (root (test-flow--session-root sess))
+         (old (test-flow--get-watch-enabled sess))
          (new (not old)))
-    (ert-flow--log "toggle-watch: panel=%s root=%s old=%s -> new=%s mode=%s"
-                   (buffer-name) root (if old "on" "off") (if new "on" "off")
-                   (ert-flow--conf sess 'watch-mode ert-flow-watch-mode))
-    (ert-flow--set-watch-enabled sess new)
+    (test-flow--log "toggle-watch: panel=%s root=%s old=%s -> new=%s mode=%s"
+                    (buffer-name) root (if old "on" "off") (if new "on" "off")
+                    (test-flow--conf sess 'watch-mode test-flow-watch-mode))
+    (test-flow--set-watch-enabled sess new)
     (if new
         (progn
-          (ert-flow--enable-watch sess)
-          (message "ert-flow: watch enabled (%s)"
-                   (ert-flow--conf sess 'watch-mode ert-flow-watch-mode)))
-      (ert-flow--disable-watch sess)
-      (message "ert-flow: watch disabled"))
+          (test-flow--enable-watch sess)
+          (message "test-flow: watch enabled (%s)"
+                   (test-flow--conf sess 'watch-mode test-flow-watch-mode)))
+      (test-flow--disable-watch sess)
+      (message "test-flow: watch disabled"))
     ;; Re-render this session's panel buffer
-    (let ((bufname (ert-flow--session-panel-name root)))
+    (let ((bufname (test-flow--session-panel-name root)))
       (when (get-buffer bufname)
         (with-current-buffer bufname
-          (let ((ert-flow--panel-buffer-name bufname))
-            (ert-flow--render)))))
+          (let ((test-flow--panel-buffer-name bufname))
+            (test-flow--render)))))
     ;; Refresh header-line caches and visuals
-    (when (fboundp 'ert-flow-headerline-refresh)
-      (ert-flow-headerline-refresh))
+    (when (fboundp 'test-flow-headerline-refresh)
+      (test-flow-headerline-refresh))
     (force-mode-line-update t)
-    (ert-flow--log "toggle-watch: updated UI for root=%s header+panel refreshed" root)))
+    (test-flow--log "toggle-watch: updated UI for root=%s header+panel refreshed" root)))
 
 ;;;; Copy failures
 
-(defun ert-flow--copy-trim (s limit)
+(defun test-flow--copy-trim (s limit)
   "Trim string S to LIMIT characters, appending a truncation marker."
   (if (and (integerp limit) (stringp s) (> (length s) limit))
       (concat (substring s 0 limit) "\n... [truncated]")
     (or s "")))
 
-(defun ert-flow--copy-format-header (timestamp n proj runner cmd duration)
+(defun test-flow--copy-format-header (timestamp n proj runner cmd duration)
   "Return header string for TIMESTAMP, N, PROJ, RUNNER, CMD, DURATION.
 
 CMD and DURATION may be empty strings; they are omitted if empty."
@@ -3117,13 +3117,13 @@ CMD and DURATION may be empty strings; they are omitted if empty."
                           (format " | Command: %s" cmd) "")
                       (if (and (stringp duration) (> (length duration) 0))
                           (format " | Duration: %s" duration) ""))))
-    (pcase ert-flow-copy-format
+    (pcase test-flow-copy-format
       ('plain    (format "ERT failures (%s): %d\n%s\n" timestamp n meta))
       ('org      (format "* ERT failures (%s): %d\n%s\n" timestamp n meta))
       ('markdown (format "### ERT failures (%s): %d\n%s\n" timestamp n meta))
       (_         (format "ERT failures (%s): %d\n%s\n" timestamp n meta)))))
 
-(defun ert-flow--copy-format-item (r)
+(defun test-flow--copy-format-item (r)
   "Return a single list item line for result plist R."
   (let* ((nm (plist-get r :name))
          (msg (or (plist-get r :message) ""))
@@ -3133,62 +3133,62 @@ CMD and DURATION may be empty strings; they are omitted if empty."
                ((and file line) (format " (%s:%s)" file line))
                (file (format " (%s)" file))
                (t ""))))
-    (pcase ert-flow-copy-format
+    (pcase test-flow-copy-format
       ('plain    (format "- %s%s: %s" nm loc msg))
       ('org      (format "- %s%s :: %s" nm loc msg))
       ('markdown (format "- %s%s: %s" nm loc msg))
       (_         (format "- %s%s: %s" nm loc msg)))))
 
-(defun ert-flow--copy-format-details (name details)
+(defun test-flow--copy-format-details (name details)
   "Return details block for NAME and DETAILS text."
-  (let* ((limit ert-flow-copy-backtrace-limit)
-         (txt (ert-flow--copy-trim (or details "") limit)))
-    (pcase ert-flow-copy-format
+  (let* ((limit test-flow-copy-backtrace-limit)
+         (txt (test-flow--copy-trim (or details "") limit)))
+    (pcase test-flow-copy-format
       ('plain    (format "\n=== %s ===\n%s" name txt))
       ('org      (format "\n** %s\n#+begin_example\n%s\n#+end_example\n" name txt))
       ('markdown (format "\n#### %s\n=\n%s\n=\n" name txt))
       (_         (format "\n=== %s ===\n%s" name txt)))))
 
-(defun ert-flow--copy-stdout-tail (raw)
+(defun test-flow--copy-stdout-tail (raw)
   "Return formatted stdout tail block from RAW or nil."
-  (when (and ert-flow-copy-include-stdout (stringp raw) (> (length raw) 0))
-    (let* ((limit ert-flow-copy-backtrace-limit)
+  (when (and test-flow-copy-include-stdout (stringp raw) (> (length raw) 0))
+    (let* ((limit test-flow-copy-backtrace-limit)
            (tail (if (and (integerp limit) (> (length raw) limit))
                      (substring raw (- (length raw) limit))
                    raw)))
-      (pcase ert-flow-copy-format
+      (pcase test-flow-copy-format
         ('plain    (format "\n--- STDOUT tail ---\n%s\n" tail))
         ('org      (format "\n** STDOUT tail\n#+begin_example\n%s\n#+end_example\n" tail))
         ('markdown (format "\n#### STDOUT tail\n=\n%s\n=\n" tail))
         (_         (format "\n--- STDOUT tail ---\n%s\n" tail))))))
 
-(defun ert-flow--copy-stderr-tail (raw)
+(defun test-flow--copy-stderr-tail (raw)
   "Return formatted stderr tail block from RAW or nil."
-  (when (and ert-flow-copy-include-stderr (stringp raw) (> (length raw) 0))
-    (let* ((limit ert-flow-copy-backtrace-limit)
+  (when (and test-flow-copy-include-stderr (stringp raw) (> (length raw) 0))
+    (let* ((limit test-flow-copy-backtrace-limit)
            (tail (if (and (integerp limit) (> (length raw) limit))
                      (substring raw (- (length raw) limit))
                    raw)))
-      (pcase ert-flow-copy-format
+      (pcase test-flow-copy-format
         ('plain    (format "\n--- STDERR tail ---\n%s\n" tail))
         ('org      (format "\n** STDERR tail\n#+begin_example\n%s\n#+end_example\n" tail))
         ('markdown (format "\n#### STDERR tail\n=\n%s\n=\n" tail))
         (_         (format "\n--- STDERR tail ---\n%s\n" tail))))))
 
 ;;;###autoload
-(defun ert-flow--copy--gather-context ()
+(defun test-flow--copy--gather-context ()
   "Collect context for building the copy string. Return plist."
-  (let* ((root (ert-flow--project-root))
-         (sess (ert-flow--get-session root))
-         (results (or (and sess (ert-flow--get-last-results sess)) ert-flow--last-results))
-         (sum (or (and sess (ert-flow--get-last-summary sess)) ert-flow--last-summary))
-         (raw (or (and sess (ert-flow--get-last-raw-output sess)) ert-flow--last-raw-output))
+  (let* ((root (test-flow--project-root))
+         (sess (test-flow--get-session root))
+         (results (or (and sess (test-flow--get-last-results sess)) test-flow--last-results))
+         (sum (or (and sess (test-flow--get-last-summary sess)) test-flow--last-summary))
+         (raw (or (and sess (test-flow--get-last-raw-output sess)) test-flow--last-raw-output))
          (fails (seq-filter (lambda (r) (memq (plist-get r :status) '(fail error))) (or results '())))
          (ts (format-time-string "%Y-%m-%d %H:%M:%S"))
          (proj (file-name-nondirectory (directory-file-name root)))
-         (runner-sym (ert-flow--conf sess 'runner ert-flow-runner))
+         (runner-sym (test-flow--conf sess 'runner test-flow-runner))
          (runner (if (eq runner-sym 'in-emacs-ert) "in-emacs" "external"))
-         (ext (ert-flow--conf sess 'external-command ert-flow-external-command))
+         (ext (test-flow--conf sess 'external-command test-flow-external-command))
          (cmd-str (cond
                    ((and (eq runner-sym 'external-command) (listp ext)) (mapconcat #'identity ext " "))
                    ((and (eq runner-sym 'external-command) (stringp ext)) ext)
@@ -3198,7 +3198,7 @@ CMD and DURATION may be empty strings; they are omitted if empty."
     (list :root root :sess sess :results results :sum sum :raw raw
           :fails fails :ts ts :proj proj :runner runner :cmd-str cmd-str :dur-str dur-str)))
 
-(defun ert-flow--copy--build-string (ctx)
+(defun test-flow--copy--build-string (ctx)
   "Build final copy string from context CTX."
   (let* ((fails (plist-get ctx :fails))
          (ts (plist-get ctx :ts))
@@ -3213,118 +3213,118 @@ CMD and DURATION may be empty strings; they are omitted if empty."
                 ts proj runner
                 (if (> (length cmd-str) 0) (format " | Command: %s" cmd-str) "")
                 (if (> (length dur-str) 0) (format " | Duration: %s" dur-str) ""))
-      (let* ((header (ert-flow--copy-format-header ts (length fails) proj runner cmd-str dur-str))
-             (body (mapconcat #'ert-flow--copy-format-item fails "\n"))
+      (let* ((header (test-flow--copy-format-header ts (length fails) proj runner cmd-str dur-str))
+             (body (mapconcat #'test-flow--copy-format-item fails "\n"))
              (details (mapconcat
                        (lambda (r)
-                         (ert-flow--copy-format-details (plist-get r :name)
-                                                        (plist-get r :details)))
+                         (test-flow--copy-format-details (plist-get r :name)
+                                                         (plist-get r :details)))
                        fails ""))
-             (stdout-block (ert-flow--copy-stdout-tail raw))
-             (stderr-raw (and sess (ert-flow--session-last-stderr-output sess)))
-             (stderr-block (ert-flow--copy-stderr-tail stderr-raw)))
+             (stdout-block (test-flow--copy-stdout-tail raw))
+             (stderr-raw (and sess (test-flow--session-last-stderr-output sess)))
+             (stderr-block (test-flow--copy-stderr-tail stderr-raw)))
         (concat header body "\n" details (or stdout-block "") (or stderr-block ""))))))
 
 ;;;###autoload
-(defun ert-flow-copy-failures ()
+(defun test-flow-copy-failures ()
   "Copy failures/errors from the last run into the kill-ring (with backtraces).
 
 Respects:
-- `ert-flow-copy-format' — 'plain (default) | 'org | 'markdown
-- `ert-flow-copy-backtrace-limit' — truncate details if set
-- `ert-flow-copy-include-stdout' — include raw stdout tail"
+- `test-flow-copy-format' — 'plain (default) | 'org | 'markdown
+- `test-flow-copy-backtrace-limit' — truncate details if set
+- `test-flow-copy-include-stdout' — include raw stdout tail"
   (interactive)
-  (let* ((ctx (ert-flow--copy--gather-context))
+  (let* ((ctx (test-flow--copy--gather-context))
          (fails (plist-get ctx :fails))
-         (s (ert-flow--copy--build-string ctx)))
+         (s (test-flow--copy--build-string ctx)))
     (kill-new s)
-    (message (if fails "ert-flow: failures copied" "ert-flow: no failures"))))
+    (message (if fails "test-flow: failures copied" "test-flow: no failures"))))
 
 ;;;###autoload
-(defun ert-flow-clear ()
+(defun test-flow-clear ()
   "Clear panel and last results for the current session."
   (interactive)
-  (let* ((sess (ert-flow--get-session (ert-flow--project-root))))
+  (let* ((sess (test-flow--get-session (test-flow--project-root))))
     (when sess
-      (ert-flow--set-last-summary sess nil)
-      (ert-flow--set-last-results sess nil)
-      (ert-flow--set-last-raw-output sess nil)))
+      (test-flow--set-last-summary sess nil)
+      (test-flow--set-last-results sess nil)
+      (test-flow--set-last-raw-output sess nil)))
   ;; keep legacy globals in sync
-  (setq ert-flow--last-summary nil
-        ert-flow--last-results nil
-        ert-flow--last-raw-output nil)
-  (let* ((bufname (ert-flow--session-panel-name (ert-flow--project-root))))
+  (setq test-flow--last-summary nil
+        test-flow--last-results nil
+        test-flow--last-raw-output nil)
+  (let* ((bufname (test-flow--session-panel-name (test-flow--project-root))))
     (when (get-buffer bufname)
-      (let ((ert-flow--panel-buffer-name bufname))
-        (ert-flow--render))))
-  (message "ert-flow: cleared"))
+      (let ((test-flow--panel-buffer-name bufname))
+        (test-flow--render))))
+  (message "test-flow: cleared"))
 
 ;;;###autoload
-(defun ert-flow-restart ()
-  "Fully restart ert-flow after code reload.
+(defun test-flow-restart ()
+  "Fully restart test-flow after code reload.
 
 Stops all sessions and processes, clears queues and counters, cancels timers,
 and re-opens the panel for the current project."
   (interactive)
-  (ert-flow--log "restart: begin")
+  (test-flow--log "restart: begin")
   (condition-case err
       (progn
-        (let ((cur-root (ert-flow--project-root)))
+        (let ((cur-root (test-flow--project-root)))
           ;; Kill all sessions (stops processes, watchers, cancels per-session timers)
-          (ignore-errors (ert-flow-kill-all-sessions))
+          (ignore-errors (test-flow-kill-all-sessions))
           ;; Cancel global timers
-          (when (timerp ert-flow--idle-gc-timer)
-            (cancel-timer ert-flow--idle-gc-timer))
-          (setq ert-flow--idle-gc-timer nil)
+          (when (timerp test-flow--idle-gc-timer)
+            (cancel-timer test-flow--idle-gc-timer))
+          (setq test-flow--idle-gc-timer nil)
           ;; Ensure after-save hook is detached
-          (when (member #'ert-flow--after-save-hook after-save-hook)
-            (remove-hook 'after-save-hook #'ert-flow--after-save-hook))
-          (setq ert-flow--active-after-save-count 0)
+          (when (member #'test-flow--after-save-hook after-save-hook)
+            (remove-hook 'after-save-hook #'test-flow--after-save-hook))
+          (setq test-flow--active-after-save-count 0)
           ;; Reset concurrency
-          (setq ert-flow--run-queue nil
-                ert-flow--active-run-count 0)
+          (setq test-flow--run-queue nil
+                test-flow--active-run-count 0)
           ;; Reset legacy globals
-          (setq ert-flow--last-raw-output nil
-                ert-flow--last-results nil
-                ert-flow--last-summary nil
-                ert-flow--process nil)
+          (setq test-flow--last-raw-output nil
+                test-flow--last-results nil
+                test-flow--last-summary nil
+                test-flow--process nil)
           ;; Re-open panel for current project (auto-detect/first-run logic will apply)
           (let ((default-directory cur-root))
-            (ert-flow--log "restart: reopen-panel root=%s" cur-root)
-            (ert-flow-open-panel))
-          (message "ert-flow: restarted")))
+            (test-flow--log "restart: reopen-panel root=%s" cur-root)
+            (test-flow-open-panel))
+          (message "test-flow: restarted")))
     (error
-     (ert-flow--log "restart error: %S" err)
-     (user-error "ert-flow: restart failed: %S" err))))
+     (test-flow--log "restart error: %S" err)
+     (user-error "test-flow: restart failed: %S" err))))
 
 ;;;; Minor mode
 
 ;;;###autoload
-(defun ert-flow-toggle-logging ()
-  "Toggle ert-flow logging and report the new state."
+(defun test-flow-toggle-logging ()
+  "Toggle test-flow logging and report the new state."
   (interactive)
-  (setq ert-flow-log-enabled (not ert-flow-log-enabled))
-  (message "ert-flow: logging %s" (if ert-flow-log-enabled "enabled" "disabled")))
+  (setq test-flow-log-enabled (not test-flow-log-enabled))
+  (message "test-flow: logging %s" (if test-flow-log-enabled "enabled" "disabled")))
 
 ;;;###autoload
-(define-minor-mode ert-flow-mode
-  "Toggle ert-flow mode.
+(define-minor-mode test-flow-mode
+  "Toggle test-flow mode.
 
-When enabled, opens the panel. If `ert-flow-run-on-enable' is non-nil,
-runs tests immediately using `ert-flow-run'."
+When enabled, opens the panel. If `test-flow-run-on-enable' is non-nil,
+runs tests immediately using `test-flow-run'."
   :global t
-  :group 'ert-flow
-  (if ert-flow-mode
+  :group 'test-flow
+  (if test-flow-mode
       (progn
-        (ert-flow-open-panel)
-        (when ert-flow-run-on-enable
-          (ert-flow-run)))
+        (test-flow-open-panel)
+        (when test-flow-run-on-enable
+          (test-flow-run)))
     ;; on disable: close panel window but keep buffers
-    (let ((buf (get-buffer ert-flow--panel-buffer-name)))
+    (let ((buf (get-buffer test-flow--panel-buffer-name)))
       (when buf
         (dolist (w (get-buffer-window-list buf nil t))
           (when (window-parameter w 'window-side)
             (delete-window w)))))))
 
-(provide 'ert-flow)
-;;; ert-flow.el ends here
+(provide 'test-flow)
+;;; test-flow.el ends here

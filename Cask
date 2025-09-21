@@ -1,11 +1,11 @@
 (source gnu)
 (source melpa)
 
-(package "ert-flow" "0.1.0" "ERT Panel")
+(package "test-flow" "0.1.0" "ERT Panel")
 
 (files "lisp/*.el")
 
-(depends-on "emacs" "28.2")
+(depends-on "emacs" "27.1")
 
 (development
  (depends-on "ert-runner")
