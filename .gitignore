@@ -19,6 +19,8 @@
 /.dir-locals.el~
 /dist/
 /build/
+/coverage/
 
 # Logs
 *.log
+...*

@@ -352,5 +352,45 @@
             (should (eq (ert-flow--find-panel-session) sess))))
       (ignore-errors (delete-directory root t)))))
 
+(ert-deftest ert-flow/watch-toggle-updates-session ()
+  "Toggling watch flips session state and reflects in status/header."
+  (let* ((root (ert-flow--project-root))
+         (sess (ert-flow--get-session root))
+         (bufname (ert-flow--session-panel-name root)))
+    (with-current-buffer (get-buffer-create bufname)
+      (let ((ert-flow--panel-buffer-name bufname))
+        (ert-flow-panel-mode)
+        (ert-flow--render)
+        (let ((initial (ert-flow--session-watch-enabled sess)))
+          (ert-flow-toggle-watch)
+          (should (not (eq (ert-flow--session-watch-enabled sess) initial)))
+          ;; Should appear in Status block
+          (let ((s (buffer-string)))
+            (should (string-match-p "Watch: \\(On\\|Off\\)" s)))
+          ;; Header-line should reflect textual label in TTY (auto->text)
+          (let ((hdr (format-mode-line header-line-format)))
+            (should (string-match-p "Watch: \\(On\\|Off\\)" hdr)))
+          ;; Flip back to restore
+          (ert-flow-toggle-watch)
+          (should (eq (ert-flow--session-watch-enabled sess) initial)))))))
+
+(ert-deftest ert-flow/watch-state-fn-reads-current-session ()
+  "ert-flow-view-controls--watch-state returns ON after enabling."
+  (let* ((root (ert-flow--project-root))
+         (sess (ert-flow--get-session root))
+         (bufname (ert-flow--session-panel-name root)))
+    (with-current-buffer (get-buffer-create bufname)
+      (let ((ert-flow--panel-buffer-name bufname))
+        (ert-flow-panel-mode)
+        (ert-flow--render)
+        ;; Ensure off, then on
+        (when (ert-flow--session-watch-enabled sess)
+          (ert-flow-toggle-watch))
+        (should (eq (ert-flow-view-controls--watch-state) 'off))
+        (ert-flow-toggle-watch)
+        (should (eq (ert-flow-view-controls--watch-state) 'on))
+        ;; cleanup: turn off
+        (ert-flow-toggle-watch)))))
+
 (provide 'ert-flow-tests)
 ;;; ert-flow-tests.el ends here

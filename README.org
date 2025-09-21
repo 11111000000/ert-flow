@@ -36,10 +36,10 @@ Ert-Flow exists to keep the loop flowing. It watches your project, runs tests wh
   :commands (ert-flow-mode ert-flow-open-panel)
   :init (setq ert-flow-run-on-open t))
   #+end_src
-  - straight.el:
+- straight.el:
   #+begin_src elisp
 (use-package ert-flow
-  :straight (ert-flow :type local :repo "~/Code/ert-flow" :files ("lisp/*.el"))
+  :straight (ert-flow :type git :repo "11111000000/ert-flow" :files ("lisp/*.el") :branch "main")
   :commands (ert-flow-mode ert-flow-open-panel)
   :init (setq ert-flow-run-on-open t))
   #+end_src

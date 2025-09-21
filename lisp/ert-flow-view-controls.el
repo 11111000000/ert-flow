@@ -73,15 +73,27 @@
   :group 'ert-flow-view-controls)
 
 ;; Helpers to read session/watch state safely
+(defun ert-flow-view-controls--log (fmt &rest args)
+  "Internal: log from view-controls when ert-flow logging is enabled."
+  (when (and (boundp 'ert-flow-log-enabled) ert-flow-log-enabled)
+    (apply #'message (concat "[ert-flow ctl] " fmt) args)))
+
 (defun ert-flow-view-controls--watch-state ()
-  "Return 'on or 'off for watch toggle in the current panel buffer."
-  (let ((on nil))
+  "Return 'on or 'off for watch toggle in the current panel buffer, with diagnostics."
+  (let ((on nil) (root nil))
     (ignore-errors
       (when (fboundp 'ert-flow--find-panel-session)
         (let ((s (ert-flow--find-panel-session)))
-          ;; Accessor defined by cl-defstruct in ert-flow.el
-          (when (and s (fboundp 'ert-flow--session-watch-enabled))
-            (setq on (ert-flow--session-watch-enabled s))))))
+          (when (and s (fboundp 'ert-flow--session-root))
+            (setq root (ert-flow--session-root s)))
+          ;; Prefer safe getter when available
+          (cond
+           ((and s (fboundp 'ert-flow--get-watch-enabled))
+            (setq on (ert-flow--get-watch-enabled s)))
+           ((and s (fboundp 'ert-flow--session-watch-enabled))
+            (setq on (ert-flow--session-watch-enabled s)))))))
+    (ert-flow-view-controls--log "watch-state: panel=%s root=%s on=%s"
+                                 (buffer-name) (or root "?") (if on "t" "nil"))
     (if on 'on 'off)))
 
 (defcustom ert-flow-controls-registry
@@ -190,7 +202,7 @@
   (if (functionp val) (funcall val) val))
 
 (defun ert-flow-view-controls--render (key)
-  "Render a single control segment for KEY, or nil if hidden/disabled."
+  "Render a single control segment for KEY, or nil if hidden."
   (let* ((desc (alist-get key ert-flow-controls-registry))
          (type (plist-get desc :type))
          (cmd  (plist-get desc :command))
@@ -203,6 +215,10 @@
     (when (and desc visible-p)
       (let* ((gicons (and (fboundp 'ert-flow-controls-icons-available-p)
                           (ert-flow-controls-icons-available-p)))
+             (style* (cond
+                      ((eq style 'text) 'text)
+                      ((and (memq style '(auto icons)) gicons) 'icons)
+                      (t 'text)))
              (state (when (eq type 'toggle)
                       (let ((fn (plist-get desc :state-fn)))
                         (when (functionp fn) (ignore-errors (funcall fn))))))
@@ -215,29 +231,46 @@
                      (spinner (concat " " spinner))
                      (ico     (concat " " ico))
                      (t (let ((lf (plist-get desc :label-fn)))
-                          (when (functionp lf) (funcall lf style state))))))
+                          (when (functionp lf) (funcall lf style* state))))))
              (s (copy-sequence (or label "")))
-             (beg (if (and (> (length s) 0) (eq (aref s 0) ?\s)) 1 0))
-             (km (when (and cmd enabled-p)
-                   (let ((m (make-sparse-keymap)))
-                     (define-key m [mouse-1] cmd)
-                     (define-key m [header-line mouse-1] cmd)
-                     m)))
              (help-str (ert-flow-view-controls--plist-fn help)))
         (when (> (length s) 0)
-          (let ((props (list 'mouse-face 'highlight
-                             'help-echo help-str
-                             'ert-flow-key key)))
-            (when km
-              (setq props (append props (list 'keymap km 'local-map km))))
-            (when (eq type 'toggle)
-              (setq props (append props (list 'ert-flow-toggle key))))
-            (when (eq type 'action)
-              (setq props (append props (list 'ert-flow-action key))))
-            (add-text-properties beg (length s) props s))
+          (let ((len (length s)))
+            ;; Tooltip на весь сегмент; действие — тоже на весь сегмент (глобальная карта его найдёт).
+            (add-text-properties 0 len (list 'help-echo help-str) s)
+            (when (and cmd enabled-p (symbolp cmd))
+              (add-text-properties 0 len (list 'ert-flow-action cmd) s))
+            ;; Разделяем сегменты: не подсвечиваем ведущий пробел, чтобы mouse-face не сливался с соседями.
+            (when (> len 0)
+              ;; Левый пробел — стрелка, без подсветки
+              (add-text-properties 0 (min 1 len) (list 'pointer 'arrow) s)
+              (if (and cmd enabled-p)
+                  ;; Кликабельная часть — с 1 по конец: рука + подсветка
+                  (add-text-properties 1 len (list 'pointer 'hand 'mouse-face 'highlight) s)
+                ;; Неактивно/нет команды — рука не нужна, подсветки нет
+                (add-text-properties 1 len (list 'pointer 'arrow) s))))
+          ;; Текстовый фейс при отсутствии иконок
+          (when-let* ((ff (plist-get desc :face-fn))
+                      (face (and (functionp ff) (funcall ff style* state))))
+            (unless gicons
+              (add-text-properties 0 (length s)
+                                   (list 'face (or (and (symbolp face) face)
+                                                   (and (listp face) face)))
+                                   s)))
+          ;; Затенение, если выключено
           (unless enabled-p
-            (add-text-properties beg (length s) (list 'face 'shadow) s))
+            (add-text-properties 0 (length s) (list 'face 'shadow) s))
           s)))))
+
+(defun ert-flow-view-controls--gap ()
+  "Return a single-space gap segment (без действия)."
+  (let ((s " "))
+    (add-text-properties 0 (length s)
+                         (list 'mouse-face nil
+                               'help-echo nil
+                               'pointer 'arrow)
+                         s)
+    s))
 
 (defun ert-flow-view-controls-segments (&optional _where)
   "Return ordered control segments for the header-line as a list of strings."
@@ -245,7 +278,7 @@
          (res '()))
     (dolist (k order)
       (if (eq k :gap)
-          (push " " res)
+          (push (ert-flow-view-controls--gap) res)
         (when-let* ((seg (ert-flow-view-controls--render k)))
           (when (stringp seg)
             (push seg res)))))

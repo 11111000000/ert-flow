@@ -343,7 +343,7 @@ Signature: (fn root-string) → name-string."
             (ert-flow--session-root s)
             (ert-flow--session-panel-buf-name s)
             (ert-flow--session-details-buf-name s)
-            (if (ert-flow--session-watch-enabled s) "On" "Off")
+            (if (ert-flow--get-watch-enabled s) "On" "Off")
             (ert-flow--conf s 'runner ert-flow-runner)
             (ert-flow--conf s 'parser ert-flow-parser)
             (or (ert-flow--get-last-parser s) "-")
@@ -711,7 +711,7 @@ Defensive parsing: accepts vectors or lists for arrays, tolerates missing keys."
   "Return non-nil if any session has watch enabled."
   (let (found)
     (maphash (lambda (_ s)
-               (when (and (not found) (ert-flow--session-watch-enabled s))
+               (when (and (not found) (ert-flow--get-watch-enabled s))
                  (setq found t)))
              ert-flow--sessions)
     found))
@@ -739,11 +739,11 @@ Defensive parsing: accepts vectors or lists for arrays, tolerates missing keys."
         (maphash
          (lambda (_root s)
            (let ((last (ert-flow--get-last-activity-at s)))
-             (when (and (ert-flow--session-watch-enabled s) last)
+             (when (and (ert-flow--get-watch-enabled s) last)
                (let* ((idle (float-time (time-subtract now last))))
                  (when (and (numberp idle)
                             (> idle ert-flow-session-idle-seconds))
-                   (setf (ert-flow--session-watch-enabled s) nil)
+                   (ert-flow--set-watch-enabled s nil)
                    (ert-flow--disable-watch s)
                    (ert-flow--log "idle-gc: disabled watch for %s after %.1fs"
                                   (ert-flow--session-root s) idle))))))
@@ -1250,6 +1250,8 @@ status, file/line, tags and backtraces."
                  (window-width . ,(ert-flow--conf sess 'panel-width ert-flow-panel-width))))))
     (ert-flow--touch-session sess)
     (with-current-buffer buf
+      ;; Ensure the panel buffer is rooted at the project for reliable fallbacks
+      (setq default-directory (file-name-as-directory root))
       (ert-flow-panel-mode)
       (let ((ert-flow--panel-buffer-name bufname))
         (ert-flow--render)))
@@ -1357,20 +1359,25 @@ watch-off, copy, clear, detect, goto."
 (defun ert-flow--insert-toolbar (_sess) ())
 
 (defun ert-flow--find-panel-session ()
-  "Return session object for the current `ert-flow--panel-buffer-name'."
-  (let (found)
+  "Return session object for the current panel buffer.
+
+Prefer the actual buffer name (panel buffer) to resolve the session.
+Do not rely on global `ert-flow--panel-buffer-name' outside render-time."
+  (let* ((panel-name
+          (or (and (eq major-mode 'ert-flow-panel-mode) (buffer-name))
+              (and (stringp ert-flow--panel-buffer-name) ert-flow--panel-buffer-name)
+              (buffer-name)))
+         (found nil))
     (maphash
      (lambda (_root s)
        (when (and (not found)
-                  (string= (ert-flow--session-panel-buf-name s)
-                           ert-flow--panel-buffer-name))
+                  (string= (ert-flow--session-panel-buf-name s) panel-name))
          (setq found s)))
      ert-flow--sessions)
-    (when found
-      (ert-flow--log "find-panel-session: panel=%s -> %s" ert-flow--panel-buffer-name (ert-flow--dbg-sess found)))
-    (unless found
+    (if found
+        (ert-flow--log "find-panel-session: panel=%s -> root=%s" panel-name (ert-flow--session-root found))
       (ert-flow--log "find-panel-session: panel=%s not found; fallback to root=%s"
-                     ert-flow--panel-buffer-name (ert-flow--project-root)))
+                     panel-name (ert-flow--project-root)))
     (or found (ert-flow--get-session (ert-flow--project-root)))))
 
 (defun ert-flow--insert-header_line (_sess)
@@ -1409,34 +1416,37 @@ Respects:
 - `ert-flow--panel-name-regexp'   — regexp for name match or nil (no filter)
 - `ert-flow--panel-tags-filter'   — list of tags (strings); test passes if any tag matches"
   (let ((rs (or results '())))
-    ;; status filter
-    (when (and (boundp 'ert-flow--panel-status-filter)
-               ert-flow--panel-status-filter)
-      (setq rs (seq-filter
-                (lambda (r) (memq (plist-get r :status) ert-flow--panel-status-filter))
-                rs)))
-    ;; name filter
-    (when (and (boundp 'ert-flow--panel-name-regexp)
-               (stringp ert-flow--panel-name-regexp)
-               (> (length ert-flow--panel-name-regexp) 0))
-      (setq rs (seq-filter
-                (lambda (r)
-                  (let ((nm (or (plist-get r :name) "")))
-                    (ignore-errors (string-match-p ert-flow--panel-name-regexp nm))))
-                rs)))
-    ;; tags filter
-    (when (and (boundp 'ert-flow--panel-tags-filter)
-               (listp ert-flow--panel-tags-filter)
-               ert-flow--panel-tags-filter)
-      (setq rs (seq-filter
-                (lambda (r)
-                  (let ((tags (plist-get r :tags)))
-                    (and (listp tags)
-                         (seq-some (lambda (want)
-                                     (seq-some (lambda (have) (equal (format "%s" have) want)) tags))
-                                   ert-flow--panel-tags-filter))))
-                rs)))
-    rs))
+    ;; Only apply filters inside an ert-flow panel buffer
+    (if (not (eq major-mode 'ert-flow-panel-mode))
+        rs
+      ;; status filter
+      (when (and (boundp 'ert-flow--panel-status-filter)
+                 ert-flow--panel-status-filter)
+        (setq rs (seq-filter
+                  (lambda (r) (memq (plist-get r :status) ert-flow--panel-status-filter))
+                  rs)))
+      ;; name filter
+      (when (and (boundp 'ert-flow--panel-name-regexp)
+                 (stringp ert-flow--panel-name-regexp)
+                 (> (length ert-flow--panel-name-regexp) 0))
+        (setq rs (seq-filter
+                  (lambda (r)
+                    (let ((nm (or (plist-get r :name) "")))
+                      (ignore-errors (string-match-p ert-flow--panel-name-regexp nm))))
+                  rs)))
+      ;; tags filter
+      (when (and (boundp 'ert-flow--panel-tags-filter)
+                 (listp ert-flow--panel-tags-filter)
+                 ert-flow--panel-tags-filter)
+        (setq rs (seq-filter
+                  (lambda (r)
+                    (let ((tags (plist-get r :tags)))
+                      (and (listp tags)
+                           (seq-some (lambda (want)
+                                       (seq-some (lambda (have) (equal (format "%s" have) want)) tags))
+                                     ert-flow--panel-tags-filter))))
+                  rs)))
+      rs)))
 
 (defun ert-flow-panel-filter--set-status (statuses)
   "Helper: set STATUS filter to STATUSES (list or nil) and re-render."
@@ -1731,7 +1741,7 @@ with the correct font; only add our foreground color on top."
                    (directory-file-name (ert-flow--session-root sess))))
          (runner-sym (ert-flow--conf sess 'runner ert-flow-runner))
          (runner (if (eq runner-sym 'in-emacs-ert) "in-emacs" "external"))
-         (watch-on (ert-flow--session-watch-enabled sess))
+         (watch-on (ert-flow--get-watch-enabled sess))
          (watch (if watch-on "On" "Off"))
          (mode (ert-flow--conf sess 'watch-mode ert-flow-watch-mode))
          (parser-used (or (ert-flow--get-last-parser sess)
@@ -1862,6 +1872,9 @@ Returns plist: (:sess :sum :results :proc) and emits diagnostic logs."
          (results (plist-get ctx :results)))
     ;; Header-line hosts controls; buffer body starts with Status block.
     (ert-flow--insert-status-block sess sum results)
+    ;; Optional coverage block (if ert-flow-coverage is loaded)
+    (when (fboundp 'ert-flow-coverage--insert-panel-block)
+      (ignore-errors (ert-flow-coverage--insert-panel-block sess)))
     ;; Directly list groups (Summary header removed as redundant)
     (dolist (pair (ert-flow--group-results (ert-flow--apply-panel-filters results)))
       (ert-flow--insert-suite (car pair) (cdr pair)))))
@@ -2317,35 +2330,7 @@ If multiple candidates are available, prompt to choose."
   last-parser
   last-activity-at)
 
-;; Compatibility setters: some environments report void-function for (setf ert-flow--session-*)
-;; despite cl-defstruct normally providing a setf-expander. Provide gv setters that operate
-;; on the cl-struct vector layout so (setf (ert-flow--session-...) ...) keeps working.
-(defun ert-flow--session--vector-p (sess)
-  (and (vectorp sess)
-       (> (length sess) 0)
-       (eq (aref sess 0) 'cl-struct-ert-flow--session)))
-
-(defsubst ert-flow--session--aset (sess idx val)
-  (when (ert-flow--session--vector-p sess)
-    (aset sess idx val))
-  val)
-
-(gv-define-setter ert-flow--session-last-raw-output (val sess)
-  `(ert-flow--session--aset ,sess 4 ,val))
-(gv-define-setter ert-flow--session-last-stderr-output (val sess)
-  `(ert-flow--session--aset ,sess 5 ,val))
-(gv-define-setter ert-flow--session-last-results (val sess)
-  `(ert-flow--session--aset ,sess 6 ,val))
-(gv-define-setter ert-flow--session-last-summary (val sess)
-  `(ert-flow--session--aset ,sess 7 ,val))
-(gv-define-setter ert-flow--session-process (val sess)
-  `(ert-flow--session--aset ,sess 8 ,val))
-(gv-define-setter ert-flow--session-debounce-timer (val sess)
-  `(ert-flow--session--aset ,sess 9 ,val))
-(gv-define-setter ert-flow--session-watch-enabled (val sess)
-  `(ert-flow--session--aset ,sess 10 ,val))
-(gv-define-setter ert-flow--session-file-notify-handles (val sess)
-  `(ert-flow--session--aset ,sess 11 ,val))
+;; cl-defstruct provides setf accessors for session slots; custom gv-setters removed.
 
 ;; Per-session configuration
 
@@ -2438,6 +2423,20 @@ If the slot is missing (older struct instances), stores VALUE in session config.
   (condition-case nil
       (setf (ert-flow--session-last-activity-at sess) value)
     (error (ert-flow--set-conf sess 'last-activity-at value)))
+  value)
+
+;; Safe getter/setter for watch-enabled
+(defun ert-flow--get-watch-enabled (sess)
+  (or (condition-case nil
+          (ert-flow--session-watch-enabled sess)
+        (error nil))
+      (ert-flow--conf sess 'watch-enabled nil)))
+
+(defun ert-flow--set-watch-enabled (sess value)
+  (condition-case nil
+      (setf (ert-flow--session-watch-enabled sess) value)
+    (error nil))
+  (ert-flow--set-conf sess 'watch-enabled value)
   value)
 
 ;; Safe session getters/setters for volatile fields: summary/results/stdout/stderr/process.
@@ -2605,7 +2604,7 @@ Stops watcher and process, cancels timers, and removes the session from registry
     (when (process-live-p (ert-flow--session-process sess))
       (ignore-errors (kill-process (ert-flow--session-process sess))))
     ;; Disable watch
-    (when (ert-flow--session-watch-enabled sess)
+    (when (ert-flow--get-watch-enabled sess)
       (ert-flow--disable-watch sess))
     ;; Cancel debounce
     (when (timerp (ert-flow--session-debounce-timer sess))
@@ -2631,7 +2630,7 @@ Stops watcher and process, cancels timers, and removes the session from registry
   "Insert a single row for session S in the sessions list."
   (let* ((root (ert-flow--session-root s))
          (panel (ert-flow--session-panel-buf-name s))
-         (watch (if (ert-flow--session-watch-enabled s) "On" "Off"))
+         (watch (if (ert-flow--get-watch-enabled s) "On" "Off"))
          (runner (ert-flow--conf s 'runner ert-flow-runner))
          (watch-mode (ert-flow--conf s 'watch-mode ert-flow-watch-mode))
          (proc (and (process-live-p (ert-flow--session-process s)) "active")))
@@ -2710,7 +2709,7 @@ Each row shows:
   (let* ((root (ert-flow--session-root s))
          (panel (ert-flow--session-panel-buf-name s))
          (sess-name (file-name-nondirectory (directory-file-name root)))
-         (watch-on (ert-flow--session-watch-enabled s))
+         (watch-on (ert-flow--get-watch-enabled s))
          (runner (ert-flow--conf s 'runner ert-flow-runner))
          (watch-mode (ert-flow--conf s 'watch-mode ert-flow-watch-mode))
          (proc (and (process-live-p (ert-flow--session-process s)) "active"))
@@ -2829,7 +2828,7 @@ This view is read-only and uses text buttons for actions."
              (sess (ert-flow--get-session root))
              (wmode (ert-flow--conf sess 'watch-mode ert-flow-watch-mode)))
         (when (and (eq wmode 'after-save)
-                   (ert-flow--session-watch-enabled sess))
+                   (ert-flow--get-watch-enabled sess))
           (let ((ert-flow-watch-include-regexp (ert-flow--conf sess 'watch-include-regexp ert-flow-watch-include-regexp))
                 (ert-flow-watch-exclude-regexp (ert-flow--conf sess 'watch-exclude-regexp ert-flow-watch-exclude-regexp)))
             (when (ert-flow--file-event-eligible-p file)
@@ -2937,23 +2936,36 @@ This view is read-only and uses text buttons for actions."
 
 ;;;###autoload
 (defun ert-flow-toggle-watch ()
-  "Toggle automatic test running (watch) for the current project session."
+  "Toggle automatic test running (watch) for the current session (panel-aware)."
   (interactive)
-  (let* ((root (ert-flow--project-root))
-         (sess (ert-flow--get-session root))
-         (new (not (ert-flow--session-watch-enabled sess))))
-    (setf (ert-flow--session-watch-enabled sess) new)
+  (let* ((sess (or (and (eq major-mode 'ert-flow-panel-mode)
+                        (ignore-errors (ert-flow--find-panel-session)))
+                   (ert-flow--get-session (ert-flow--project-root))))
+         (root (ert-flow--session-root sess))
+         (old (ert-flow--get-watch-enabled sess))
+         (new (not old)))
+    (ert-flow--log "toggle-watch: panel=%s root=%s old=%s -> new=%s mode=%s"
+                   (buffer-name) root (if old "on" "off") (if new "on" "off")
+                   (ert-flow--conf sess 'watch-mode ert-flow-watch-mode))
+    (ert-flow--set-watch-enabled sess new)
     (if new
         (progn
           (ert-flow--enable-watch sess)
-          (message "ert-flow: watch enabled (%s)" (ert-flow--conf sess 'watch-mode ert-flow-watch-mode)))
+          (message "ert-flow: watch enabled (%s)"
+                   (ert-flow--conf sess 'watch-mode ert-flow-watch-mode)))
       (ert-flow--disable-watch sess)
-      (message "ert-flow: watch disabled")))
-  (let* ((bufname (ert-flow--session-panel-name (ert-flow--project-root))))
-    (when (get-buffer bufname)
-      (let ((ert-flow--panel-buffer-name bufname))
-        (ert-flow--render))))
-  (force-mode-line-update t))
+      (message "ert-flow: watch disabled"))
+    ;; Re-render this session's panel buffer
+    (let ((bufname (ert-flow--session-panel-name root)))
+      (when (get-buffer bufname)
+        (with-current-buffer bufname
+          (let ((ert-flow--panel-buffer-name bufname))
+            (ert-flow--render)))))
+    ;; Refresh header-line caches and visuals
+    (when (fboundp 'ert-flow-headerline-refresh)
+      (ert-flow-headerline-refresh))
+    (force-mode-line-update t)
+    (ert-flow--log "toggle-watch: updated UI for root=%s header+panel refreshed" root)))
 
 ;;;; Copy failures
 
