@@ -310,36 +310,41 @@ FILES is an alist of (FILE . PLIST) with keys:
       (let* ((lf (alist-get 'lines-found sum))
              (lh (alist-get 'lines-hit sum))
              (pct (alist-get 'percent sum)))
-        (insert (format "  Total: %.1f%% (%d/%d)\n" pct lh lf))
-        (let* ((sorted (seq-take
-                        (sort (copy-sequence files)
-                              (lambda (a b)
-                                (< (plist-get (cdr a) :percent)
-                                   (plist-get (cdr b) :percent))))
-                        ert-flow-coverage-max-files-in-panel)))
-          (dolist (cell sorted)
-            (let* ((file (car cell))
-                   (meta (cdr cell))
-                   (fpct (plist-get meta :percent))
-                   (lf* (plist-get meta :lines-found))
-                   (lh* (plist-get meta :lines-hit))
-                   (miss (plist-get meta :missed-lines))
-                   (label (format "  %-6.1f%% %s (%d/%d)%s\n"
-                                  fpct
-                                  (ert-flow-coverage--shorten-path root file)
-                                  lh* lf*
-                                  (if miss (format "  [missed:%d]" (length miss)) ""))))
-              (insert-text-button
-               label
-               'follow-link t
-               'help-echo "Open file (mouse-1) and jump to first missed line"
-               'action (lambda (_)
-                         (find-file file)
-                         (when miss
-                           (goto-char (point-min))
-                           (forward-line (1- (apply #'min miss)))))
-               'face 'default))))
-        (insert "\n")))))
+        (cond
+         ;; Пустой LCOV (нет DA записей) — подсказка как получить реальное покрытие
+         ((or (null lf) (= lf 0))
+          (insert "  No executable lines (empty LCOV). Generate real coverage via Undercover/elisp-coverage.\n\n"))
+         (t
+          (insert (format "  Total: %.1f%% (%d/%d)\n" pct lh lf))
+          (let* ((sorted (seq-take
+                          (sort (copy-sequence files)
+                                (lambda (a b)
+                                  (< (plist-get (cdr a) :percent)
+                                     (plist-get (cdr b) :percent))))
+                          ert-flow-coverage-max-files-in-panel)))
+            (dolist (cell sorted)
+              (let* ((file (car cell))
+                     (meta (cdr cell))
+                     (fpct (plist-get meta :percent))
+                     (lf* (plist-get meta :lines-found))
+                     (lh* (plist-get meta :lines-hit))
+                     (miss (plist-get meta :missed-lines))
+                     (label (format "  %-6.1f%% %s (%d/%d)%s\n"
+                                    fpct
+                                    (ert-flow-coverage--shorten-path root file)
+                                    lh* lf*
+                                    (if miss (format "  [missed:%d]" (length miss)) ""))))
+                (insert-text-button
+                 label
+                 'follow-link t
+                 'help-echo "Open file (mouse-1) and jump to first missed line"
+                 'action (lambda (_)
+                           (find-file file)
+                           (when miss
+                             (goto-char (point-min))
+                             (forward-line (1- (apply #'min miss)))))
+                 'face 'default))))
+          (insert "\n")))))))
 
 (provide 'ert-flow-coverage)
 ;;; ert-flow-coverage.el ends here
