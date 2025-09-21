@@ -31,6 +31,8 @@
 (declare-function ert-flow--get-session "ert-flow" (&optional root))
 (declare-function ert-flow--session-panel-name "ert-flow" (root))
 (declare-function ert-flow--render "ert-flow" ())
+(declare-function ert-flow--session-list "ert-flow" ())
+(declare-function ert-flow--session-root "ert-flow" (sess))
 
 (defgroup ert-flow-coverage nil
   "Coverage analyzer and UI helpers for ert-flow."
@@ -220,6 +222,22 @@ FILES is an alist of (FILE . PLIST) with keys:
              (files (ert-flow-coverage--files-for-sess sess)))
         (cdr (assoc canon files))))))
 
+(defun ert-flow-coverage--pick-session-for-file (file)
+  "Pick best ert-flow session for FILE by longest matching root prefix."
+  (let* ((abs (ert-flow-coverage--canon file))
+         (best nil)
+         (best-len -1))
+    (when (fboundp 'ert-flow--session-list)
+      (dolist (s (ert-flow--session-list))
+        (let* ((root (and (fboundp 'ert-flow--session-root)
+                          (ert-flow--session-root s)))
+               (root* (and root (file-name-as-directory (expand-file-name root)))))
+          (when (and (stringp root*) (string-prefix-p root* abs))
+            (let ((len (length root*)))
+              (when (> len best-len)
+                (setq best s best-len len)))))))
+    best))
+
 ;;;###autoload
 (defun ert-flow-coverage-overlays-clear ()
   "Remove coverage overlays in the current buffer."
@@ -233,11 +251,14 @@ FILES is an alist of (FILE . PLIST) with keys:
   "Apply missed-lines coverage overlays to the current buffer (if coverage is loaded)."
   (interactive)
   (ert-flow-coverage-overlays-clear)
-  (let* ((sess (and (fboundp 'ert-flow--get-session)
-                    (funcall 'ert-flow--get-session (if (fboundp 'ert-flow--project-root)
-                                                        (ert-flow--project-root)
-                                                      default-directory))))
-         (meta (ert-flow-coverage--find-meta-for-current-buffer sess)))
+  (let* ((file (buffer-file-name))
+         (sess (or (and file (ert-flow-coverage--pick-session-for-file file))
+                   (and (fboundp 'ert-flow--get-session)
+                        (funcall 'ert-flow--get-session
+                                 (if (fboundp 'ert-flow--project-root)
+                                     (ert-flow--project-root)
+                                   default-directory)))))
+         (meta (and sess (ert-flow-coverage--find-meta-for-current-buffer sess))))
     (when meta
       (save-excursion
         (dolist (ln (sort (copy-sequence (plist-get meta :missed-lines)) #'<))

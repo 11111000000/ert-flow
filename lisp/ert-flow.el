@@ -1147,7 +1147,8 @@ status, file/line, tags and backtraces."
   ;; Buffer-local fold state for suite groups
   (setq-local ert-flow--folded-suites (or ert-flow--folded-suites
                                           (make-hash-table :test 'equal)))
-  ;; Header-line controls, if available and enabled
+  ;; Ensure header-line module is loaded, then apply controls if enabled.
+  (ignore-errors (require 'ert-flow-headerline nil t))
   (when (and (boundp 'ert-flow-view-headerline-enable)
              ert-flow-view-headerline-enable
              (fboundp 'ert-flow-headerline--apply))
@@ -1629,13 +1630,9 @@ Note: do not override icon color with a uniform button face."
       (forward-line 1))
     nil))
 
-(defun ert-flow--render-context ()
-  "Collect render context for current panel buffer."
-  (let* ((sess (ert-flow--find-panel-session))
-         (sum (and sess (ert-flow--get-last-summary sess)))
-         (results (and sess (ert-flow--get-last-results sess)))
-         (proc (and sess (ert-flow--get-process sess))))
-    (list :sess sess :sum sum :results results :proc proc)))
+(defun ert-flow--render-context--simple ()
+  "Deprecated pre-logging variant; use `ert-flow--render-context' instead."
+  (ert-flow--render-context))
 
 ;; Collapsible Status block (panel header area in buffer)
 (defvar-local ert-flow--panel-status-folded nil
@@ -1812,16 +1809,9 @@ with the correct font; only add our foreground color on top."
   (let ((ert-flow--panel-buffer-name (buffer-name)))
     (ert-flow--render)))
 
-(defun ert-flow--render-insert (ctx)
-  "Insert Status block and grouped suites using CTX."
-  (let* ((sess (plist-get ctx :sess))
-         (sum (plist-get ctx :sum))
-         (results (plist-get ctx :results)))
-    ;; Header-line is used for controls; buffer body starts with Status block.
-    (ert-flow--insert-status-block sess sum results)
-    ;; Directly list groups (Summary header removed as redundant)
-    (dolist (pair (ert-flow--group-results (ert-flow--apply-panel-filters results)))
-      (ert-flow--insert-suite (car pair) (cdr pair)))))
+(defun ert-flow--render-insert--precoverage (ctx)
+  "Deprecated pre-coverage variant: kept for reference."
+  (ert-flow--render-insert ctx))
 
 (defun ert-flow--render-restore-point ()
   "Restore point to requested suite heading, or move to beginning."
@@ -2105,9 +2095,49 @@ For 'in-emacs-ert runner:
     (error
      (ert-flow--log "Filter error: %S" err))))
 
+(defun ert-flow--looks-like-batch-output (s)
+  "Heuristic: return non-nil if S looks like ERT batch output."
+  (and (stringp s)
+       (or (string-match-p "^Running[ \t]+[0-9]+[ \t]+tests?" s)
+           (string-match-p "^Ran[ \t]+[0-9]+[ \t]+tests?" s)
+           (string-match-p "^Test[ \t]+" s)
+           (string-match-p "^[ \t]*\\(FAILED\\|ERROR\\|SKIPPED\\|XFAIL\\|XPASS\\)[ \t]" s)
+           (string-match-p "^[ \t]*passed[ \t]+[0-9]+/[0-9]+[ \t]+" s))))
+
+(defun ert-flow--looks-like-json-output (s)
+  "Heuristic: return non-nil if S looks like our JSON payload."
+  (and (stringp s)
+       (string-match-p "{" s)
+       (or (string-match-p "\"tests\"" s)
+           (string-match-p "\"summary\"" s))))
+
 (defun ert-flow--choose-output-for-parse (stdout stderr)
-  "Choose which stream to parse: prefer STDOUT if non-empty, else STDERR, else \"\"."
+  "Choose stream to parse using simple heuristics.
+
+Prefer JSON when only one side looks like JSON.
+If both sides look like ERT batch output, merge them (stdout + stderr),
+because ERT often splits progress and failures across streams.
+Otherwise, fall back to non-empty stdout, then stderr."
   (cond
+   ;; Prefer JSON stream when only one side looks like JSON
+   ((and (ert-flow--looks-like-json-output stdout)
+         (not (ert-flow--looks-like-json-output stderr)))
+    stdout)
+   ((and (ert-flow--looks-like-json-output stderr)
+         (not (ert-flow--looks-like-json-output stdout)))
+    stderr)
+   ;; If both look like batch output → merge
+   ((and (ert-flow--looks-like-batch-output stdout)
+         (ert-flow--looks-like-batch-output stderr))
+    (concat (or stdout "") "\n" (or stderr "")))
+   ;; Otherwise prefer the side that looks like ERT batch output
+   ((and (ert-flow--looks-like-batch-output stdout)
+         (not (ert-flow--looks-like-batch-output stderr)))
+    stdout)
+   ((and (ert-flow--looks-like-batch-output stderr)
+         (not (ert-flow--looks-like-batch-output stdout)))
+    stderr)
+   ;; Fallbacks
    ((and (stringp stdout) (> (length stdout) 0)) stdout)
    ((and (stringp stderr) (> (length stderr) 0)) stderr)
    (t "")))
@@ -2202,6 +2232,11 @@ For 'in-emacs-ert runner:
                              (or (and (listp summary) (alist-get 'total summary)) "?")
                              (or used (ert-flow--conf sess 'parser ert-flow-parser)))
               (ert-flow--sentinel-store sess used summary results stderr-str)
+              ;; Auto-load coverage (LCOV) if the module is present and enabled.
+              (when (and (featurep 'ert-flow-coverage)
+                         (boundp 'ert-flow-coverage-auto-load)
+                         ert-flow-coverage-auto-load)
+                (ignore-errors (ert-flow-coverage-load t)))
               (when (buffer-live-p stderr-buf) (kill-buffer stderr-buf))
               (ert-flow--sentinel-render root)
               (ert-flow--finish-run)))))

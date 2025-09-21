@@ -4,7 +4,7 @@
 ;;   nix run .#coverage
 ;;
 ;; Steps:
-;;   1) Instrument lisp/*.el with undercover (local file report, no upload)
+;;   1) Instrument l/*.el with undercover (local file report, no upload)
 ;;   2) Load and run ERT tests (batch, without -and-exit)
 ;;   3) Save Coveralls JSON, convert to LCOV at coverage/lcov.info
 ;;   4) Exit with non-zero code if tests had unexpected results
@@ -14,8 +14,15 @@
 (require 'json)
 
 (let* ((root (expand-file-name default-directory))
-       (lisp (expand-file-name "lisp" root))
-       (tests (expand-file-name "tests" root))
+       ;; Prefer conventional dirs; fallback to short aliases.
+       (lisp (or (and (file-directory-p (expand-file-name "lisp" root))
+                      (expand-file-name "lisp" root))
+                 (expand-file-name "l" root)))
+       (tests (or (and (file-directory-p (expand-file-name "tests" root))
+                       (expand-file-name "tests" root))
+                  (and (file-directory-p (expand-file-name "test" root))
+                       (expand-file-name "test" root))
+                  (expand-file-name "t" root)))
        (cov-dir (expand-file-name "coverage" root))
        (coveralls-json (expand-file-name "coveralls.json" cov-dir))
        (lcov-info (expand-file-name "lcov.info" cov-dir)))
@@ -24,8 +31,9 @@
 
   ;; 1) undercover instrumentation before loading project files
   (require 'undercover)
-  ;; Generate local report; do not send anywhere. Keep simple Coveralls JSON.
-  (undercover "lisp/*.el"
+  ;; Undercover — макрос, ожидает литеральные строки, а не выражения.
+  ;; Дадим сразу оба паттерна: для lisp/ и для короткого l/.
+  (undercover "lisp/*.el" "l/*.el"
               (:report-file coveralls-json)
               (:send-report nil))
 

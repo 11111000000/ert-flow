@@ -1,68 +1,130 @@
 {
-  description = "ert-flow: devShell, tests, and Elisp coverage generator via undercover → lcov";
+  description = "Ert-flow dev shell + apps (tests, coverage)";
 
-  inputs.nixpkgs.url = "github:NixOS/nixpkgs/nixpkgs-unstable";
+  inputs.nixpkgs.url = "github:NixOS/nixpkgs/nixos-25.05";
 
-  outputs = { self, nixpkgs }:
-    let
-      systems = [ "x86_64-linux" "aarch64-linux" "x86_64-darwin" "aarch64-darwin" ];
-      eachSystem = f: nixpkgs.lib.genAttrs systems (system:
-        let
-          pkgs = import nixpkgs { inherit system; config = { allowUnfree = true; }; };
-
-          # Emacs with needed MELPA packages
-          emacsPkg = pkgs.emacsWithPackages (epkgs: with epkgs; [
-            undercover
-            elisp-coverage
-            all-the-icons
-          ]);
-
-          testsBin = pkgs.writeShellScriptBin "ert-flow-tests" ''
-            set -euo pipefail
-            # Run project tests (ERT); CWD is the project root
-            exec ${emacsPkg}/bin/emacs -Q --batch -L lisp -l tests/run-tests.el
+  outputs = { self, nixpkgs, ... }:
+  let
+    forAllSystems =
+      f: nixpkgs.lib.genAttrs [ "x86_64-linux" "aarch64-linux" ] (system:
+        f (import nixpkgs { inherit system; }));
+  in {
+    # Разделяем определение emacs с нужными пакетами, чтобы использовать его и в devShell, и в apps.
+    devShells = forAllSystems (pkgs:
+      let
+        emacsWithPkgs =
+          (pkgs.emacsPackagesFor pkgs.emacs30-nox).emacsWithPackages
+            (epkgs: [ epkgs.melpaPackages.undercover ]);
+      in {
+        default = pkgs.mkShell {
+          packages = [
+            emacsWithPkgs
+            pkgs.cask
+            pkgs.git
+            pkgs.cacert
+            pkgs.curl
+          ];
+          shellHook = ''
+            export CASK_EMACS=$(command -v emacs)
+            export EMACS=$(command -v emacs)
           '';
+        };
+      });
 
-          coverageBin = pkgs.writeShellScriptBin "ert-flow-coverage" ''
+    # Утилиты запуска:
+    # - nix run .#tests    → запускает batch-ERT через tests/run-tests.el или t/run-tests.el
+    # - nix run .#coverage → запускает scripts/coverage.el или s/coverage.el (undercover → LCOV)
+    # - nix run .          → alias на .#tests (apps.default)
+    apps = forAllSystems (pkgs:
+      let
+        emacsWithPkgs =
+          (pkgs.emacsPackagesFor pkgs.emacs30-nox).emacsWithPackages
+            (epkgs: [ epkgs.melpaPackages.undercover ]);
+
+        makeApp = name: text:
+          let drv = pkgs.writeShellApplication {
+            inherit name;
+            runtimeInputs = [ emacsWithPkgs ];
+            text = text;
+          };
+          in { type = "app"; program = "${drv}/bin/${name}"; };
+      in rec {
+        tests = makeApp "tests" ''
+          set -euo pipefail
+          if [ -f tests/run-tests.el ]; then
+            TARGET=tests/run-tests.el
+          elif [ -f t/run-tests.el ]; then
+            TARGET=t/run-tests.el
+          else
+            echo "No run-tests.el found under tests/ or t/" >&2
+            exit 1
+          fi
+          exec ${emacsWithPkgs}/bin/emacs -Q --batch -l "$TARGET"
+        '';
+
+        coverage = makeApp "coverage" ''
+          set -euo pipefail
+          if [ -f scripts/coverage.el ]; then
+            TARGET=scripts/coverage.el
+          elif [ -f s/coverage.el ]; then
+            TARGET=s/coverage.el
+          else
+            echo "No coverage.el found under scripts/ or s/" >&2
+            exit 1
+          fi
+          exec ${emacsWithPkgs}/bin/emacs -Q --batch -l "$TARGET"
+        '';
+
+        # alias по умолчанию, чтобы nix run . работал без #tests
+        default = tests;
+      });
+
+    # checks: nix flake check будет прогонять тесты
+    checks = forAllSystems (pkgs:
+      let
+        emacsWithPkgs =
+          (pkgs.emacsPackagesFor pkgs.emacs30-nox).emacsWithPackages
+            (epkgs: [ epkgs.melpaPackages.undercover ]);
+      in {
+        tests = pkgs.runCommand "ert-flow-tests" { buildInputs = [ emacsWithPkgs ]; } ''
+          set -euo pipefail
+          if [ -f tests/run-tests.el ]; then
+            TARGET=tests/run-tests.el
+          elif [ -f t/run-tests.el ]; then
+            TARGET=t/run-tests.el
+          else
+            echo "No run-tests.el found under tests/ or t/" >&2
+            exit 1
+          fi
+          ${emacsWithPkgs}/bin/emacs -Q --batch -l "$TARGET"
+          mkdir -p "$out"
+          echo "ok" > "$out/result"
+        '';
+      });
+
+    # Дополнительно: default package — исполняемый скрипт запуска тестов (nix build .)
+    packages = forAllSystems (pkgs:
+      let
+        emacsWithPkgs =
+          (pkgs.emacsPackagesFor pkgs.emacs30-nox).emacsWithPackages
+            (epkgs: [ epkgs.melpaPackages.undercover ]);
+      in {
+        default = pkgs.writeShellApplication {
+          name = "ert-flow-tests";
+          runtimeInputs = [ emacsWithPkgs ];
+          text = ''
             set -euo pipefail
-            mkdir -p coverage
-            # Run coverage harness (undercover → coveralls.json → lcov.info)
-            exec ${emacsPkg}/bin/emacs -Q --batch -L lisp -l scripts/coverage.el
+            if [ -f tests/run-tests.el ]; then
+              TARGET=tests/run-tests.el
+            elif [ -f t/run-tests.el ]; then
+              TARGET=t/run-tests.el
+            else
+              echo "No run-tests.el found under tests/ or t/" >&2
+              exit 1
+            fi
+            exec ${emacsWithPkgs}/bin/emacs -Q --batch -l "$TARGET"
           '';
-        in rec {
-          devShells.default = pkgs.mkShell {
-            packages = [
-              emacsPkg
-              pkgs.git
-              pkgs.ripgrep
-              pkgs.fd
-              pkgs.coreutils
-              pkgs.gnused
-            ];
-          };
-
-          apps.tests = {
-            type = "app";
-            program = "${testsBin}/bin/ert-flow-tests";
-          };
-
-          apps.coverage = {
-            type = "app";
-            program = "${coverageBin}/bin/ert-flow-coverage";
-          };
-
-          # Optional: run tests in CI as a flake check
-          checks.tests = pkgs.runCommand "ert-flow-tests" { buildInputs = [ emacsPkg ]; } ''
-            set -euo pipefail
-            cp -r ${self} src
-            cd src
-            ${emacsPkg}/bin/emacs -Q --batch -L lisp -l tests/run-tests.el
-            touch $out
-          '';
-        });
-    in {
-      devShells = eachSystem (s: s.devShells);
-      apps      = eachSystem (s: s.apps);
-      checks    = eachSystem (s: s.checks);
-    };
+        };
+      });
+  };
 }

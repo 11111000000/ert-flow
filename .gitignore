@@ -24,3 +24,5 @@
 # Logs
 *.log
 ...*
+
+flake.lock
