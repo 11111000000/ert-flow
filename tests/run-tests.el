@@ -4,9 +4,11 @@
 ;;   emacs -Q --batch -l tests/run-tests.el
 
 (let* ((this (or load-file-name (buffer-file-name)))
-       (root (expand-file-name ".." (file-name-directory this))))
+       (root (expand-file-name ".." (file-name-directory this)))
+       (lisp (expand-file-name "lisp" root)))
+  (add-to-list 'load-path lisp)
   (add-to-list 'load-path root)
-  (load (expand-file-name "ert-flow.el" root) nil t)
+  (require 'ert-flow)
   (load (expand-file-name "tests/ert-flow-tests.el" root) nil t))
 
 (ert-run-tests-batch-and-exit)

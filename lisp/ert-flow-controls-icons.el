@@ -13,6 +13,7 @@
 
 (require 'cl-lib)
 (require 'subr-x)
+(declare-function ert-flow-headerline-refresh "ert-flow-headerline" ())
 
 (defgroup ert-flow-controls-icons nil
   "Graphic icons for ert-flow header-line controls."
@@ -168,7 +169,8 @@ Either a cons (PROVIDER . NAME), or an alist of ((on . (PROVIDER . NAME)) (off .
 (defun ert-flow-controls-icons--refresh-ui ()
   "Refresh UI after icon settings change/load/theme."
   (ignore-errors (ert-flow-controls-icons-clear-cache))
-  (ert-flow-headerline-refresh))
+  (when (fboundp 'ert-flow-headerline-refresh)
+    (ert-flow-headerline-refresh)))
 
 ;; Refresh when all-the-icons loads
 (with-eval-after-load 'all-the-icons

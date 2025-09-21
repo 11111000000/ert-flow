@@ -15,7 +15,7 @@
 
 (require 'cl-lib)
 (require 'subr-x)
-(require 'ert-flow-controls-icons)
+(require 'ert-flow-controls-icons nil t)
 
 ;; Declarations (provided by ert-flow.el)
 (declare-function ert-flow-run "ert-flow" ())

@@ -14,9 +14,9 @@
 (require 'cl-lib)
 (require 'subr-x)
 
-;; Soft deps
-(require 'ert-flow-view-controls)
-(require 'ert-flow-controls-icons)
+;; Soft deps (optional to avoid hard require cycles)
+(require 'ert-flow-view-controls nil t)
+(require 'ert-flow-controls-icons nil t)
 
 (defgroup ert-flow-headerline nil
   "Header-line controls for ert-flow."

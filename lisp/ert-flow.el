@@ -414,6 +414,15 @@ If VALUE is a string, wrap with shell runner."
 
 ;;;; Parsing ERT batch output
 
+(defun ert-flow--batch-clean-name (s)
+  "Return NAME from ERT summary line, stripping timing/location suffixes.
+Examples:
+  \"ert-flow/render-smoke (0.000 sec) at tests/foo.el:12\" -> \"ert-flow/render-smoke\"."
+  (let* ((nm (ert-flow--string-trim s)))
+    (if (string-match "\\`\\([^ ]+\\)" nm)
+        (match-string 1 nm)
+      nm)))
+
 (defun ert-flow--batch--extract-details-block (lines i)
   "Extract details block starting after index I in LINES.
 Return cons (block . next-i) where next-i is position to continue loop."
@@ -454,7 +463,7 @@ Return a plist:
      ;; Early classification
      (when (string-match "^[ \t]*\\(FAILED\\|ERROR\\|SKIPPED\\|XFAIL\\|XPASS\\)[ \t]+[0-9]+/[0-9]+[ \t]+\\(.+\\)$" line)
        (let* ((kw (match-string 1 line))
-              (nm (ert-flow--string-trim (match-string 2 line)))
+              (nm (ert-flow--batch-clean-name (match-string 2 line)))
               (st (pcase kw
                     ("FAILED"  'fail)
                     ("ERROR"   'error)
@@ -499,7 +508,7 @@ Also tolerates progress counters like \"FAILED 2/15 NAME\"."
   (dolist (line lines)
     (when (string-match "^[ \t]*\\(FAILED\\|ERROR\\|SKIPPED\\|XFAIL\\|XPASS\\)\\(?:[ \t]+[0-9]+/[0-9]+\\)?[ \t]+\\(.+\\)$" line)
       (let* ((kw (match-string 1 line))
-             (nm (ert-flow--string-trim (match-string 2 line)))
+             (nm (ert-flow--batch-clean-name (match-string 2 line)))
              (st (pcase kw
                    ("FAILED"  'fail)
                    ("ERROR"   'error)
