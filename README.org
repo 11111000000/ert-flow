@@ -29,7 +29,7 @@ Ert-Flow exists to keep the loop flowing. It watches your project, runs tests wh
   - Emacs 27 or newer.
   - Optional: all-the-icons for fancy toolbar/header icons.
 ** Package managers
-  - Straight.el (local checkout):
+  - Local checkout:
   #+begin_src 
 (use-package ert-flow
         :load-path "~/Code/ert-flow"
