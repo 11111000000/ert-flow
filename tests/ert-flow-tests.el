@@ -152,6 +152,8 @@
          (bufname (ert-flow--session-panel-name root)))
     (with-current-buffer (get-buffer-create bufname)
       (let ((ert-flow--panel-buffer-name bufname))
+        ;; Status is folded by default; unfold for this check.
+        (setq-local ert-flow--panel-status-folded nil)
         (ert-flow--render)
         (should (string-match-p "Runner:" (buffer-string)))))))
 
@@ -161,6 +163,8 @@
          (bufname (ert-flow--session-panel-name root)))
     (with-current-buffer (get-buffer-create bufname)
       (let ((ert-flow--panel-buffer-name bufname))
+        ;; Status is folded by default; unfold for this check.
+        (setq-local ert-flow--panel-status-folded nil)
         (ert-flow--render)
         (should (string-match-p "Parser:" (buffer-string)))))))
 
@@ -361,6 +365,8 @@
     (with-current-buffer (get-buffer-create bufname)
       (let ((ert-flow--panel-buffer-name bufname))
         (ert-flow-panel-mode)
+        ;; Status is folded by default; unfold to assert on its body lines.
+        (setq-local ert-flow--panel-status-folded nil)
         (ert-flow--render)
         (let ((initial (ert-flow--session-watch-enabled sess)))
           (ert-flow-toggle-watch)

@@ -197,7 +197,7 @@ Supported:
                  (regexp :tag "Include regexp"))
   :group 'ert-flow)
 
-(defcustom ert-flow-watch-exclude-regexp "/\\(?:\\.git\\|\\.direnv\\|node_modules\\|build\\|dist\\)/"
+(defcustom ert-flow-watch-exclude-regexp "/\\(?:\\.git\\|\\.direnv\\|node_modules\\|build\\|dist\\|coverage\\)/"
   "Regexp for paths to exclude from watch (nil means exclude none)."
   :type '(choice (const :tag "Exclude none" nil)
                  (regexp :tag "Exclude regexp"))
@@ -493,6 +493,10 @@ Return a plist:
      (when (and (null unexpected)
                 (string-match "^\\([0-9]+\\)[ \t]+unexpected results?:" line))
        (setq unexpected (string-to-number (match-string 1 line))))
+     ;; Also handle: "Ran N tests, M results were unexpected."
+     (when (and (null unexpected)
+                (string-match "^[ \t]*Ran[ \t]+[0-9]+[ \t]+tests?,[ \t]+\\([0-9]+\\)[ \t]+results? were unexpected\\." line))
+       (setq unexpected (string-to-number (match-string 1 line))))
      (when (and (null time-str)
                 (string-match "in[ \t]+\\([0-9.]+\\)[ \t]+seconds" line))
        (setq time-str (match-string 1 line)))
@@ -574,10 +578,17 @@ Also tolerates progress counters like \"FAILED 2/15 NAME\"."
                    (plist-get t1 :total)
                    (plist-get t1 :unexpected)
                    results)))
-    (ert-flow--log "batch parsed: total=%s results=%d time=%s"
-                   (or (alist-get 'total summary) "?")
-                   (length results)
-                   (or (alist-get 'time summary) "-"))
+    (let* ((p (cl-count-if (lambda (r) (eq (plist-get r :status) 'pass)) results))
+           (f (cl-count-if (lambda (r) (eq (plist-get r :status) 'fail)) results))
+           (e (cl-count-if (lambda (r) (eq (plist-get r :status) 'error)) results))
+           (s (cl-count-if (lambda (r) (memq (plist-get r :status) '(skip xfail))) results))
+           (u (and (listp summary) (alist-get 'unexpected summary))))
+      (ert-flow--log "batch parsed: total=%s results=%d P:%d F:%d E:%d S:%d U:%s time=%s"
+                     (or (alist-get 'total summary) "?")
+                     (length results)
+                     p f e s
+                     (or u 0)
+                     (or (alist-get 'time summary) "-")))
     (when (and (= (length results) 0)
                (stringp out) (> (length out) 0))
       (ert-flow--log "batch parsed 0 results; first 200 chars:\n%s"
@@ -837,25 +848,30 @@ Defensive parsing: accepts vectors or lists for arrays, tolerates missing keys."
         (insert (propertize (format "Running: %s %S\n" label cmd) 'face 'shadow))))
     (let ((default-directory root))
       (ert-flow--log "spawn: root=%s cmd=%S label=%s" root cmd label)
-      (let* ((stderr-buf (generate-new-buffer " *ert-flow-stderr*"))
-             (p (make-process
-                 :name "ert-flow-runner"
-                 :command cmd
-                 :noquery t
-                 :buffer nil
-                 :connection-type 'pipe
-                 :filter #'ert-flow--proc-filter
-                 :sentinel #'ert-flow--proc-sentinel
-                 :stderr stderr-buf)))
-        (process-put p 'ert-flow-session sess)
-        (process-put p 'ert-flow-stderr-buf stderr-buf)
-        (process-put p 'ert-flow-label label)
-        (process-put p 'ert-flow-root root)
-        (process-put p 'ert-flow-cmd cmd)
-        (ert-flow--set-process sess p)
-        ;; legacy global for compatibility
-        (setq ert-flow--process p)
-        (ert-flow--log-concurrency-state)))))
+      (let* ((stdout-buf (generate-new-buffer " *ert-flow-stdout*"))
+             (stderr-buf (generate-new-buffer " *ert-flow-stderr*"))
+             ;; Assign a monotonically increasing run sequence per session to avoid stale overwrites
+             (seq (1+ (or (ert-flow--conf sess 'run-seq 0) 0))))
+        (ert-flow--set-conf sess 'run-seq seq)
+        (let* ((p (make-process
+                   :name "ert-flow-runner"
+                   :command cmd
+                   :noquery t
+                   :buffer stdout-buf
+                   :connection-type 'pipe
+                   :sentinel #'ert-flow--proc-sentinel
+                   :stderr stderr-buf)))
+          (process-put p 'ert-flow-session sess)
+          (process-put p 'ert-flow-stdout-buf stdout-buf)
+          (process-put p 'ert-flow-stderr-buf stderr-buf)
+          (process-put p 'ert-flow-label label)
+          (process-put p 'ert-flow-root root)
+          (process-put p 'ert-flow-cmd cmd)
+          (process-put p 'ert-flow-run-seq seq)
+          (ert-flow--set-process sess p)
+          ;; legacy global for compatibility
+          (setq ert-flow--process p)
+          (ert-flow--log-concurrency-state))))))
 
 ;;;; Internal run finish and in-Emacs runner
 
@@ -1241,8 +1257,9 @@ status, file/line, tags and backtraces."
                            found)))))
     (cons ext-cmd auto-did-detect)))
 
-(defun ert-flow--open-panel--display (sess root)
-  "Display panel window for SESS at ROOT and render."
+(defun ert-flow--open-panel--display (sess root &optional select)
+  "Display panel window for SESS at ROOT and render.
+When SELECT is non-nil, focus the panel window; otherwise do not steal focus."
   (let* ((bufname (ert-flow--session-panel-name root))
          (buf (get-buffer-create bufname))
          (win (display-buffer-in-side-window
@@ -1256,7 +1273,8 @@ status, file/line, tags and backtraces."
       (ert-flow-panel-mode)
       (let ((ert-flow--panel-buffer-name bufname))
         (ert-flow--render)))
-    (select-window win)))
+    (when select
+      (select-window win))))
 
 (defun ert-flow--open-panel--maybe-first-run (sess runner ext-cmd auto-did-detect)
   "Maybe trigger first run for SESS based on RUNNER, EXT-CMD and AUTO-DID-DETECT."
@@ -1305,7 +1323,7 @@ status, file/line, tags and backtraces."
                      (ert-flow--session-panel-name root)
                      (ert-flow--dbg-sess sess)
                      (ert-flow--dbg-conf sess))
-      (ert-flow--open-panel--display sess root)
+      (ert-flow--open-panel--display sess root (called-interactively-p 'interactive))
       (ert-flow--open-panel--maybe-first-run sess runner ext-cmd* auto-did))))
 
 (defun ert-flow--propertize (text result)
@@ -1561,10 +1579,17 @@ from test names for display only (the underlying result plist is unchanged)."
                  (fboundp 'all-the-icons-material)
                  (display-graphic-p)
                  (find-font (font-spec :family "Material Icons")))
-            (all-the-icons-material "folder" :v-adjust 0.0 :height 1.0 :face face))
+            ;; Do NOT pass :face here; get the icon with its own font face,
+            ;; then compose with our color face to preserve the font family.
+            (all-the-icons-material "folder" :v-adjust 0.0 :height 1.0))
            ((char-displayable-p ?📁) "📁")
            (t "[+]"))))
-    (if (stringp icon) (propertize icon 'face face) icon)))
+    (cond
+     ((not (stringp icon)) icon)
+     (t
+      (let* ((icon-face (get-text-property 0 'face icon))
+             (combined (if icon-face (list icon-face face) face)))
+        (propertize icon 'face combined))))))
 
 (defun ert-flow--insert-suite (suite results)
   "Insert a SUITE heading and its RESULTS, always showing suite header.
@@ -1584,41 +1609,50 @@ Note: do not override icon color with a uniform button face."
          (_init (unless present
                   (when (eq agg 'all-pass)
                     (puthash suite t ert-flow--folded-suites))))
-         (folded (gethash suite ert-flow--folded-suites))
-         (arrow (if folded "▸" "▾"))
-         (icon (ert-flow--suite-icon agg))
-         (name suite)
-         (s (concat arrow " " icon " " name "\n"))
-         (arrow-len (length arrow))
-         (icon-len (length icon))
-         (name-start (+ arrow-len 1 icon-len 1))
-         (name-end (1- (length s))))
-    ;; Bold arrow and suite name; icon keeps its own colored face
-    (add-text-properties 0 arrow-len '(face bold) s)
-    (when (> name-end name-start)
-      (add-text-properties name-start name-end '(face bold) s))
-    ;; Only highlight and show hand cursor over the group name (not arrow/icon)
-    (when (> name-end name-start)
-      (add-text-properties name-start name-end '(mouse-face highlight pointer hand) s))
-    (insert-text-button
-     s
-     'face '(:underline nil)  ;; remove underline, do not override icon color
-     'mouse-face nil
-     'follow-link t
-     'help-echo "Toggle group (mouse-1, TAB)"
-     'keymap ert-flow--suite-button-map
-     'ert-flow--suite suite
-     'action (lambda (_btn)
-               (ert-flow--ensure-fold-table)
-               (let ((cur (gethash suite ert-flow--folded-suites)))
-                 (puthash suite (not cur) ert-flow--folded-suites))
-               ;; Ensure we re-render the correct panel buffer (current buffer).
-               (let ((ert-flow--panel-buffer-name (buffer-name)))
-                 (setq-local ert-flow--restore-point-suite suite)
-                 (ert-flow--render))))
-    (unless folded
-      (dolist (r results)
-        (ert-flow--insert-test-line r)))))
+         (folded (gethash suite ert-flow--folded-suites)))
+    ;; Diagnostic: log suite aggregate and fold state
+    (ert-flow--log "suite: %s agg=%s folded=%s"
+                   suite agg (if folded "t" "nil"))
+    ;; UX: if suite was previously auto-folded as all-pass, but now has failures/errors,
+    ;; auto-unfold it so the red tests are visible immediately.
+    (when (and folded (not (eq agg 'all-pass)))
+      (puthash suite nil ert-flow--folded-suites)
+      (setq folded nil)
+      (ert-flow--log "suite: auto-unfold due to non-pass aggregate → %s" suite))
+    (let* ((arrow (if folded "▸" "▾"))
+           (icon (ert-flow--suite-icon agg))
+           (name suite)
+           (s (concat arrow " " icon " " name "\n"))
+           (arrow-len (length arrow))
+           (icon-len (length icon))
+           (name-start (+ arrow-len 1 icon-len 1))
+           (name-end (1- (length s))))
+      ;; Bold arrow and suite name; icon keeps its own colored face
+      (add-text-properties 0 arrow-len '(face bold) s)
+      (when (> name-end name-start)
+        (add-text-properties name-start name-end '(face bold) s))
+      ;; Only highlight and show hand cursor over the group name (not arrow/icon)
+      (when (> name-end name-start)
+        (add-text-properties name-start name-end '(mouse-face highlight pointer hand) s))
+      (insert-text-button
+       s
+       'face '(:underline nil)  ;; remove underline, do not override icon color
+       'mouse-face nil
+       'follow-link t
+       'help-echo "Toggle group (mouse-1, TAB)"
+       'keymap ert-flow--suite-button-map
+       'ert-flow--suite suite
+       'action (lambda (_btn)
+                 (ert-flow--ensure-fold-table)
+                 (let ((cur (gethash suite ert-flow--folded-suites)))
+                   (puthash suite (not cur) ert-flow--folded-suites))
+                 ;; Ensure we re-render the correct panel buffer (current buffer).
+                 (let ((ert-flow--panel-buffer-name (buffer-name)))
+                   (setq-local ert-flow--restore-point-suite suite)
+                   (ert-flow--render))))
+      (unless folded
+        (dolist (r results)
+          (ert-flow--insert-test-line r))))))
 
 (defun ert-flow--goto-suite-heading (suite)
   "Move point to the heading line of SUITE. Return non-nil on success."
@@ -1636,8 +1670,10 @@ Note: do not override icon color with a uniform button face."
   (ert-flow--render-context))
 
 ;; Collapsible Status block (panel header area in buffer)
-(defvar-local ert-flow--panel-status-folded nil
+(defvar-local ert-flow--panel-status-folded t
   "If non-nil, the status block is folded in this panel buffer.")
+(defvar-local ert-flow--panel-status-initialized nil
+  "Internal: if non-nil, do not overwrite fold state from session conf during render.")
 
 (defun ert-flow--panel-status-icon ()
   "Return an icon for the Status block (all-the-icons if available, else text).
@@ -1807,6 +1843,12 @@ with the correct font; only add our foreground color on top."
   "Toggle folding of the Status block and re-render."
   (interactive)
   (setq ert-flow--panel-status-folded (not ert-flow--panel-status-folded))
+  ;; Persist fold state in the session config so it survives re-renders/reloads.
+  (when (fboundp 'ert-flow--find-panel-session)
+    (ignore-errors
+      (let ((sess (ert-flow--find-panel-session)))
+        (when sess
+          (ert-flow--set-conf sess 'panel-status-folded ert-flow--panel-status-folded)))))
   (let ((ert-flow--panel-buffer-name (buffer-name)))
     (ert-flow--render)))
 
@@ -1837,6 +1879,13 @@ Returns plist: (:sess :sum :results :proc) and emits diagnostic logs."
                    (and (boundp 'ert-flow--panel-status-filter) ert-flow--panel-status-filter)
                    (and (boundp 'ert-flow--panel-name-regexp) ert-flow--panel-name-regexp)
                    (and (boundp 'ert-flow--panel-tags-filter) ert-flow--panel-tags-filter))
+    ;; Extra diagnostics: counters P/F/E/U as seen by renderer.
+    (let* ((cnt (apply #'ert-flow--summary-counters (list sum results))))
+      (ert-flow--log "render: counters P:%s F:%s E:%s U:%s"
+                     (plist-get cnt :passed)
+                     (plist-get cnt :failed)
+                     (plist-get cnt :error)
+                     (plist-get cnt :unexpected)))
     (when (null results)
       (ert-flow--log "no-results: none stored yet (root=%s) proc-live=%s first-open-done=%s run-on-open=%s runner=%s cmd=%S active=%d queued=%d"
                      (and sess (ert-flow--session-root sess))
@@ -1884,7 +1933,17 @@ Returns plist: (:sess :sum :results :proc) and emits diagnostic logs."
     (with-current-buffer buf
       (let ((inhibit-read-only t))
         (erase-buffer)
-        (let ((ctx (ert-flow--render-context)))
+        (let* ((ctx (ert-flow--render-context))
+               (sess (plist-get ctx :sess)))
+          ;; Initialize Status fold state from session config only once per buffer,
+          ;; and never override when the variable is already locally set (tests or UI).
+          (when sess
+            (if (local-variable-p 'ert-flow--panel-status-folded (current-buffer))
+                (setq-local ert-flow--panel-status-initialized t)
+              (unless ert-flow--panel-status-initialized
+                (setq-local ert-flow--panel-status-folded
+                            (ert-flow--conf sess 'panel-status-folded t))
+                (setq-local ert-flow--panel-status-initialized t))))
           (ert-flow--render-insert ctx))
         (ert-flow--render-restore-point)))))
 
@@ -2150,15 +2209,19 @@ Otherwise, fall back to non-empty stdout, then stderr."
   (dotimes (_ 3) (accept-process-output nil 0.05)))
 
 (defun ert-flow--sentinel-read-streams (proc)
-  "Return plist with session and streams for PROC: (:sess :root :stdout :stderr :stderr-buf)."
+  "Return plist with session and streams for PROC: (:sess :root :stdout :stderr :stdout-buf :stderr-buf)."
   (let* ((sess (process-get proc 'ert-flow-session))
          (root (and sess (ert-flow--session-root sess)))
-         (stdout (or (and sess (ert-flow--get-last-raw-output sess))
-                     ert-flow--last-raw-output))
+         (stdout-buf (or (process-get proc 'ert-flow-stdout-buf)
+                         (process-buffer proc)))
          (stderr-buf (process-get proc 'ert-flow-stderr-buf))
+         (stdout (when (buffer-live-p stdout-buf)
+                   (with-current-buffer stdout-buf (buffer-string))))
          (stderr-str (when (buffer-live-p stderr-buf)
                        (with-current-buffer stderr-buf (buffer-string)))))
-    (list :sess sess :root root :stdout stdout :stderr stderr-str :stderr-buf stderr-buf)))
+    (list :sess sess :root root
+          :stdout stdout :stderr stderr-str
+          :stdout-buf stdout-buf :stderr-buf stderr-buf)))
 
 (defun ert-flow--sentinel-parse (sess raw)
   "Parse RAW according to SESS parser preference. Return (used summary results)."
@@ -2183,25 +2246,33 @@ Otherwise, fall back to non-empty stdout, then stderr."
              (setq summary (car p2) results (cdr p2)))))))
     (list used summary results)))
 
-(defun ert-flow--sentinel-store (sess used summary results stderr-str)
-  "Store RESULTS and SUMMARY into SESS (and globals), trimming STDERR-STR."
+(defun ert-flow--sentinel-store (sess used summary results stdout-str stderr-str)
+  "Store RESULTS and SUMMARY into SESS (and globals), trimming STDOUT-STR/STDERR-STR."
   (when sess
+    ;; Trim stdout/stderr tails to cap memory
+    (when (and (stringp stdout-str)
+               (integerp ert-flow-max-raw-output-bytes)
+               (> (length stdout-str) ert-flow-max-raw-output-bytes))
+      (setq stdout-str (substring stdout-str (- (length stdout-str) ert-flow-max-raw-output-bytes))))
     (when (and (stringp stderr-str)
                (integerp ert-flow-max-raw-output-bytes)
                (> (length stderr-str) ert-flow-max-raw-output-bytes))
       (setq stderr-str (substring stderr-str (- (length stderr-str) ert-flow-max-raw-output-bytes))))
+    (ert-flow--set-last-raw-output sess stdout-str)
     (ert-flow--set-last-stderr-output sess stderr-str)
     (ert-flow--touch-session sess)
     (ert-flow--set-last-summary sess summary)
     (ert-flow--set-last-results sess results)
     (ert-flow--set-process sess nil)
     (ert-flow--set-last-parser sess used)
-    (ert-flow--log "store: root=%s parser=%s results=%d total=%s stderr-len=%s"
+    (ert-flow--log "store: root=%s parser=%s results=%d total=%s stdout-len=%s stderr-len=%s"
                    (ert-flow--session-root sess) used (length results)
                    (or (and (listp summary) (alist-get 'total summary)) "?")
+                   (if (stringp stdout-str) (number-to-string (length stdout-str)) "nil")
                    (if (stringp stderr-str) (number-to-string (length stderr-str)) "nil")))
   (setq ert-flow--last-summary summary
-        ert-flow--last-results results))
+        ert-flow--last-results results
+        ert-flow--last-raw-output stdout-str))
 
 (defun ert-flow--sentinel-render (root)
   "Re-render panel for ROOT."
@@ -2222,6 +2293,7 @@ Otherwise, fall back to non-empty stdout, then stderr."
                        (root (plist-get plist :root))
                        (stdout (plist-get plist :stdout))
                        (stderr-str (plist-get plist :stderr))
+                       (stdout-buf (plist-get plist :stdout-buf))
                        (stderr-buf (plist-get plist :stderr-buf))
                        (raw (ert-flow--choose-output-for-parse stdout stderr-str)))
             (ert-flow--log "sentinel: root=%s label=%s" root (process-get proc 'ert-flow-label))
@@ -2229,20 +2301,41 @@ Otherwise, fall back to non-empty stdout, then stderr."
                            (if (stringp stdout) (number-to-string (length stdout)) "nil")
                            (if (stringp stderr-str) (number-to-string (length stderr-str)) "nil")
                            (if (eq raw stdout) "stdout" (if (eq raw stderr-str) "stderr" "empty")))
-            (pcase-let ((`(,used ,summary ,results) (ert-flow--sentinel-parse sess raw)))
-              (ert-flow--log "sentinel parsed: results=%d total=%s (parser=%s)"
-                             (length results)
-                             (or (and (listp summary) (alist-get 'total summary)) "?")
-                             (or used (ert-flow--conf sess 'parser ert-flow-parser)))
-              (ert-flow--sentinel-store sess used summary results stderr-str)
-              ;; Auto-load coverage (LCOV) if the module is present and enabled.
-              (when (and (featurep 'ert-flow-coverage)
-                         (boundp 'ert-flow-coverage-auto-load)
-                         ert-flow-coverage-auto-load)
-                (ignore-errors (ert-flow-coverage-load t)))
-              (when (buffer-live-p stderr-buf) (kill-buffer stderr-buf))
-              (ert-flow--sentinel-render root)
-              (ert-flow--finish-run)))))
+            ;; Drop stale (older) runs finishing after a newer one started
+            (let* ((seq (process-get proc 'ert-flow-run-seq))
+                   (latest (and sess (ert-flow--conf sess 'run-seq 0)))
+                   (outdated (and (numberp seq) (numberp latest) (< seq latest))))
+              (if outdated
+                  (progn
+                    (ert-flow--log "sentinel: dropping outdated results: seq=%s latest=%s" seq latest)
+                    (when (buffer-live-p stdout-buf) (kill-buffer stdout-buf))
+                    (when (buffer-live-p stderr-buf) (kill-buffer stderr-buf))
+                    (ert-flow--finish-run))
+                (pcase-let ((`(,used ,summary ,results) (ert-flow--sentinel-parse sess raw)))
+                  (ert-flow--log "sentinel parsed: results=%d total=%s (parser=%s)"
+                                 (length results)
+                                 (or (and (listp summary) (alist-get 'total summary)) "?")
+                                 (or used (ert-flow--conf sess 'parser ert-flow-parser)))
+                  ;; If exit was abnormal but F+E==0 (and U>0), dump raw head to diagnose parser miss.
+                  (let* ((f (or (and (listp summary) (alist-get 'failed summary)) 0))
+                         (e (or (and (listp summary) (alist-get 'error summary)) 0))
+                         (u (or (and (listp summary) (alist-get 'unexpected summary)) 0)))
+                    (when (and (string-match-p "\\(finished\\|exited\\)" (or event ""))
+                               (string-match-p "abnormally\\|exited" (or event ""))
+                               (= (+ f e) 0)
+                               (> u 0))
+                      (let ((head (and (stringp raw) (substring raw 0 (min 400 (length raw))))))
+                        (ert-flow--log "anomaly: exit!=0 but F+E=0 (U=%d). raw head:\n%s" u (or head "")))))
+                  (ert-flow--sentinel-store sess used summary results stdout stderr-str)
+                  ;; Auto-load coverage (LCOV) if the module is present and enabled.
+                  (when (and (featurep 'ert-flow-coverage)
+                             (boundp 'ert-flow-coverage-auto-load)
+                             ert-flow-coverage-auto-load)
+                    (ignore-errors (ert-flow-coverage-load t)))
+                  (when (buffer-live-p stdout-buf) (kill-buffer stdout-buf))
+                  (when (buffer-live-p stderr-buf) (kill-buffer stderr-buf))
+                  (ert-flow--sentinel-render root)
+                  (ert-flow--finish-run)))))))
     (error
      (ert-flow--log "Sentinel error: %S" err))))
 
