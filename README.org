@@ -47,9 +47,7 @@ Ert-Flow exists to keep the loop flowing. It watches your project, runs tests wh
              :branch "main"
              ;; :files ("lisp/*.el") ; uncomment if sources live under lisp/
              )
-  :commands (ert-flow-mode ert-flow-open-panel)
-  :custom
-  (ert-flow-run-on-open t))
+  :custom (ert-flow-run-on-open t))
   #+end_src
 ** Manual
     - Place ert-flow.el, ert-flow-headerline.el, ert-flow-view-controls.el, ert-flow-controls-icons.el on your load-path.
