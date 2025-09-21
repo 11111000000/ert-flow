@@ -1581,6 +1581,9 @@ Note: do not override icon color with a uniform button face."
     (add-text-properties 0 arrow-len '(face bold) s)
     (when (> name-end name-start)
       (add-text-properties name-start name-end '(face bold) s))
+    ;; Only highlight and show hand cursor over the group name (not arrow/icon)
+    (when (> name-end name-start)
+      (add-text-properties name-start name-end '(mouse-face highlight pointer hand) s))
     (insert-text-button
      s
      'face '(:underline nil)  ;; remove underline, do not override icon color
@@ -1741,12 +1744,15 @@ Note: do not override icon color with a uniform button face."
     ;; Make only "Status" bold, not the whole string (to avoid underline/other theme effects)
     (when status-pos
       (add-text-properties status-pos (+ status-pos (length "Status"))
-                           '(face (:weight bold)) label-str))
+                           '(face (:weight bold)) label-str)
+      ;; Only highlight and show hand cursor over the word "Status"
+      (add-text-properties status-pos (+ status-pos (length "Status"))
+                           '(mouse-face highlight pointer hand) label-str))
     ;; Heading with toggle
     (insert-text-button
      label-str
      'face '(:underline nil)  ;; remove underline, keep icon color (no foreground here)
-     'mouse-face 'highlight
+     'mouse-face nil
      'follow-link t
      'help-echo "Fold/unfold Status (mouse-1, TAB)"
      'keymap ert-flow--status-button-map
