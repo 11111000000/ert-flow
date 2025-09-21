@@ -12,6 +12,7 @@
 (require 'cl-lib)
 (require 'subr-x)
 (require 'json)
+(require 'seq)
 
 (let* ((root (expand-file-name default-directory))
        ;; Prefer conventional dirs; fallback to short aliases.
@@ -55,30 +56,53 @@
      ((fboundp 'undercover-save-report) (undercover-save-report))
      ((fboundp 'undercover-report) (undercover-report))
      (t (message "undercover: no explicit save-report function; relying on defaults")))
+    (message "undercover: expected report at %s" coveralls-json)
 
-    ;; Convert Coveralls JSON → LCOV if available.
-    (when (file-exists-p coveralls-json)
-      (message "coverage: converting %s → %s" coveralls-json lcov-info)
-      (with-temp-buffer
-        (insert-file-contents coveralls-json)
-        (let* ((obj (json-parse-buffer :object-type 'alist :array-type 'list))
-               (files (or (alist-get 'source_files obj) (alist-get "source_files" obj))))
+    ;; Convert Coveralls JSON → LCOV with robust fallback.
+    (let* ((jpath (cond
+                   ((file-exists-p coveralls-json) coveralls-json)
+                   ;; Fallback: ищем coveralls.json где угодно в репо
+                   (t (car (ignore-errors
+                             (directory-files-recursively root "\\`coveralls\\.json\\'")))))))
+      (if (and jpath (file-exists-p jpath))
+          (progn
+            (message "coverage: converting %s → %s" jpath lcov-info)
+            (with-temp-buffer
+              (insert-file-contents jpath)
+              (let* ((obj (json-parse-buffer :object-type 'alist :array-type 'list))
+                     (files (or (alist-get 'source_files obj) (alist-get "source_files" obj))))
+                (with-temp-file lcov-info
+                  (dolist (f files)
+                    (let* ((name (or (alist-get 'name f) (alist-get "name" f)))
+                           (cov  (or (alist-get 'coverage f) (alist-get "coverage" f)))
+                           (abs  (expand-file-name name root)))
+                      (insert (format "TN:\nSF:%s\n" abs))
+                      (let ((line 0) (lf 0) (lh 0))
+                        (dolist (hits cov)
+                          (setq line (1+ line))
+                          (when (numberp hits)
+                            (setq lf (1+ lf))
+                            (when (> hits 0) (setq lh (1+ lh)))
+                            (insert (format "DA:%d,%d\n" line (truncate hits)))))
+                        ;; Optional LF/LH (helps other tools)
+                        (insert (format "LF:%d\nLH:%d\n" lf lh)))
+                      (insert "end_of_record\n"))))))
+            (message "coverage: wrote %s" lcov-info))
+        ;; Fallback: создаём минимальный LCOV (без DA), чтобы файл точно был.
+        (message "coverage: coveralls.json not found; writing minimal LCOV to %s" lcov-info)
+        (let* ((cands (list lisp (expand-file-name "l" root)))
+               (src-dirs (cl-remove-if-not #'file-directory-p cands))
+               (els (apply #'append
+                           (mapcar (lambda (d)
+                                     (ignore-errors
+                                       (directory-files-recursively d "\\.el\\'")))
+                                   src-dirs))))
           (with-temp-file lcov-info
-            (dolist (f files)
-              (let* ((name (or (alist-get 'name f) (alist-get "name" f)))
-                     (cov  (or (alist-get 'coverage f) (alist-get "coverage" f)))
-                     (abs  (expand-file-name name root)))
-                (insert (format "TN:\nSF:%s\n" abs))
-                (let ((line 0) (lf 0) (lh 0))
-                  (dolist (hits cov)
-                    (setq line (1+ line))
-                    (when (numberp hits)
-                      (setq lf (1+ lf))
-                      (when (> hits 0) (setq lh (1+ lh)))
-                      (insert (format "DA:%d,%d\n" line (truncate hits)))))
-                  ;; Optional LF/LH (our parser tolerates absence, but adding helps other tools)
-                  (insert (format "LF:%d\nLH:%d\n" lf lh)))
-                (insert "end_of_record\n")))))))
+            (dolist (p els)
+              (insert (format "TN:\nSF:%s\nend_of_record\n" (expand-file-name p root))))))
+        (message "coverage: wrote minimal %s" lcov-info)))
 
     ;; 4) Exit code: 0 if OK, 1 if unexpected results
+    (message "coverage: lcov at %s exists? %s"
+             lcov-info (if (file-exists-p lcov-info) "yes" "no"))
     (kill-emacs (if (and (numberp unexpected) (> unexpected 0)) 1 0))))

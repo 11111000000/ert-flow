@@ -3,7 +3,7 @@
 ;; Version: 0.1.0
 ;; Package-Requires: ((emacs "27.1"))
 ;; Keywords: tools, lisp, testing
-;; URL: https://example.com/ert-flow
+;; URL: https://github.com/11111000000/ert-flow
 
 ;;; Commentary:
 ;; Minimal working step of ert-flow:
@@ -1202,7 +1202,6 @@ status, file/line, tags and backtraces."
     map)
   "Keymap for toolbar buttons that makes TAB fold/unfold the nearest group.")
 
-;;;###autoload
 (defun ert-flow--open-panel--maybe-autodetect (sess root runner ext-cmd)
   "Return (ext-cmd . auto-did-detect) after optional auto-detect for SESS at ROOT."
   (let* ((auto-did-detect nil)
@@ -1285,6 +1284,7 @@ status, file/line, tags and backtraces."
                         ((and (eq runner 'external-command) (not norm)) "no external command")
                         (t "unknown"))))))))
 
+;;;###autoload
 (defun ert-flow-open-panel ()
   "Open or focus the ert-flow panel (session-aware)."
   (interactive)
@@ -1931,6 +1931,7 @@ Returns plist: (:sess :sum :results :proc) and emits diagnostic logs."
       (goto-char (point-min))
       (view-mode 1))))
 
+;;;###autoload
 (defun ert-flow-open-details-at-point ()
   "Open a buffer with details for the test at point (session-aware)."
   (interactive)
@@ -2709,6 +2710,7 @@ Stops watcher and process, cancels timers, and removes the session from registry
                                   (ert-flow-list-sessions)))
     (insert "\n\n")))
 
+;;;###autoload
 (defun ert-flow-list-sessions ()
   "List current sessions in a temporary buffer with quick actions.
 
@@ -2797,6 +2799,7 @@ Each row shows:
                                   (ert-flow-dashboard)))
     (insert "\n\n")))
 
+;;;###autoload
 (defun ert-flow-dashboard ()
   "Show a summary dashboard across all ert-flow sessions with quick actions.
 

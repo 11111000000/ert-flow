@@ -30,22 +30,30 @@ Ert-Flow exists to keep the loop flowing. It watches your project, runs tests wh
   - Optional: all-the-icons for fancy toolbar/header icons.
 ** Package managers
   - Local checkout:
-  #+begin_src 
+  #+begin_src emacs-lisp
 (use-package ert-flow
   :load-path "~/Code/ert-flow/lisp"
   :commands (ert-flow-mode ert-flow-open-panel)
-  :init (setq ert-flow-run-on-open t))
+  :custom
+  (ert-flow-run-on-open t))
   #+end_src
 - straight.el:
-  #+begin_src elisp
+  #+begin_src emacs-lisp
 (use-package ert-flow
-  :straight (ert-flow :type git :repo "11111000000/ert-flow" :files ("lisp/*.el") :branch "main")
+  :straight (ert-flow
+             :type git
+             :host github
+             :repo "11111000000/ert-flow"
+             :branch "main"
+             ;; :files ("lisp/*.el") ; uncomment if sources live under lisp/
+             )
   :commands (ert-flow-mode ert-flow-open-panel)
-  :init (setq ert-flow-run-on-open t))
+  :custom
+  (ert-flow-run-on-open t))
   #+end_src
 ** Manual
     - Place ert-flow.el, ert-flow-headerline.el, ert-flow-view-controls.el, ert-flow-controls-icons.el on your load-path.
-      #+begin_src 
+      #+begin_src emacs-lisp
      (require 'ert-flow)
       #+end_src
 ** Optional fonts
