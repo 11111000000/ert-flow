@@ -9,7 +9,12 @@
   (add-to-list 'load-path lisp)
   (add-to-list 'load-path root)
   (require 'ert-flow)
-  (load (expand-file-name "tests/ert-flow-tests.el" root) nil t))
+  ;; Optional: coverage module and its tests
+  (ignore-errors (require 'ert-flow-coverage))
+  (load (expand-file-name "tests/ert-flow-tests.el" root) nil t)
+  (let ((cov-tests (expand-file-name "tests/ert-flow-coverage-tests.el" root)))
+    (when (file-exists-p cov-tests)
+      (load cov-tests nil t))))
 
 (ert-run-tests-batch-and-exit)
 

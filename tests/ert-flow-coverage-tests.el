@@ -6,16 +6,12 @@
 
 (defun ert-flow-coverage-tests--lcov-sample ()
   "Return a minimal LCOV sample text."
-  (mapconcat
-   #'identity
-   '("TN:"
-     (concat "SF:" (expand-file-name "lisp/foo.el" default-directory))
-     "DA:1,1"
-     "DA:2,0"
-     "DA:3,2"
-     "end_of_record"
-     "")
-   "\n"))
+  (let* ((file (expand-file-name "lisp/foo.el" default-directory))
+         (sf (concat "SF:" file)))
+    (mapconcat
+     #'identity
+     (list "TN:" sf "DA:1,1" "DA:2,0" "DA:3,2" "end_of_record" "")
+     "\n")))
 
 (ert-deftest ert-flow-coverage/parse-basic ()
   (let* ((txt (ert-flow-coverage-tests--lcov-sample))
