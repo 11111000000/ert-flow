@@ -15,6 +15,7 @@
 (require 'subr-x)
 (declare-function ert-flow-headerline-refresh "ert-flow-headerline" ())
 
+;;;###autoload
 (defgroup ert-flow-controls-icons nil
   "Graphic icons for ert-flow header-line controls."
   :group 'ert-flow

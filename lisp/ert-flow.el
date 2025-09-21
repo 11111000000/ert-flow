@@ -34,6 +34,7 @@
 (require 'ert-flow-view-controls nil t)
 (require 'ert-flow-controls-icons nil t)
 
+;;;###autoload
 (defgroup ert-flow nil
   "Automate running and visualizing ERT tests."
   :group 'tools
@@ -2025,6 +2026,7 @@ Works when the test function is loaded in the current Emacs session."
         (when (and (listp extra) (seq-every-p #'stringp extra))
           (append ext-cmd extra))))))
 
+;;;###autoload
 (defun ert-flow-run-failed ()
   "Run only failed/error tests if possible, else run all (session-aware).
 
@@ -3130,6 +3132,7 @@ CMD and DURATION may be empty strings; they are omitted if empty."
              (stderr-block (ert-flow--copy-stderr-tail stderr-raw)))
         (concat header body "\n" details (or stdout-block "") (or stderr-block ""))))))
 
+;;;###autoload
 (defun ert-flow-copy-failures ()
   "Copy failures/errors from the last run into the kill-ring (with backtraces).
 

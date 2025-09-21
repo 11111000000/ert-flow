@@ -34,6 +34,7 @@
 (declare-function ert-flow--session-list "ert-flow" ())
 (declare-function ert-flow--session-root "ert-flow" (sess))
 
+;;;###autoload
 (defgroup ert-flow-coverage nil
   "Coverage analyzer and UI helpers for ert-flow."
   :group 'ert-flow)

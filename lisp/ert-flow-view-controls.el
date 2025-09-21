@@ -32,6 +32,7 @@
 (defvar ert-flow-log-enabled nil)
 (defvar ert-flow-toolbar-style 'auto)
 
+;;;###autoload
 (defgroup ert-flow-view-controls nil
   "Header-line controls for ert-flow."
   :group 'ert-flow)

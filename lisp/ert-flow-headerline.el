@@ -18,6 +18,7 @@
 (require 'ert-flow-view-controls nil t)
 (require 'ert-flow-controls-icons nil t)
 
+;;;###autoload
 (defgroup ert-flow-headerline nil
   "Header-line controls for ert-flow."
   :group 'ert-flow)
