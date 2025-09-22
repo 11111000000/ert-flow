@@ -29,6 +29,17 @@ Test-Flow exists to keep the loop flowing. It watches your project, runs tests w
   - Emacs 27 or newer.
   - Optional: all-the-icons for fancy toolbar/header icons.
 ** Package managers
+  - package-vc-install:
+#+begin_src 
+(use-package test-flow
+  :init
+  (unless (package-installed-p 'test-flow)
+    (package-vc-install
+     '(test-flow
+       :vc-backend Git
+       :url "https://github.com/11111000000/test-flow"
+       :branch "main"))))
+#+end_src  
   - Local checkout:
   #+begin_src emacs-lisp
 (use-package test-flow
@@ -45,7 +56,7 @@ Test-Flow exists to keep the loop flowing. It watches your project, runs tests w
              :host github
              :repo "11111000000/test-flow"
              :branch "main"
-             ;; :files ("lisp/*.el") ; uncomment if sources live under lisp/
+             :files ("lisp/*.el")
              )
   :custom (test-flow-run-on-open t))
   #+end_src
@@ -120,12 +131,12 @@ Test-Flow exists to keep the loop flowing. It watches your project, runs tests w
 
 * Configuration reference (customize these)
 ** Core runner and parsing
-| Variable                                  | Type                               | Default             | Description                                                                 |
-|-------------------------------------------+------------------------------------+---------------------+-----------------------------------------------------------------------------|
-| test-flow-runner                           | choice: external-command/in-emacs-ert | external-command    | Backend to execute tests.                                                   |
-| test-flow-parser                           | choice: auto/json/ert-batch        | auto                | Parsing strategy for test output.                                           |
-| test-flow-external-command                 | list argv or string (shell)        | nil                 | External command to run tests. If string, executed via SHELL -lc.           |
-| test-flow-external-failed-args-function    | function or nil                    | nil                 | (fn failed-names) → extra argv to run only failures (requires argv form).   |
+| Variable                                | Type                                  | Default          | Description                                                               |
+|-----------------------------------------+---------------------------------------+------------------+---------------------------------------------------------------------------|
+| test-flow-runner                        | choice: external-command/in-emacs-ert | external-command | Backend to execute tests.                                                 |
+| test-flow-parser                        | choice: auto/json/ert-batch           | auto             | Parsing strategy for test output.                                         |
+| test-flow-external-command              | list argv or string (shell)           | nil              | External command to run tests. If string, executed via SHELL -lc.         |
+| test-flow-external-failed-args-function | function or nil                       | nil              | (fn failed-names) → extra argv to run only failures (requires argv form). |
 
 ** Watcher and re-run ergonomics
 | Variable                         | Type                              | Default  | Description                                                                |
@@ -139,49 +150,49 @@ Test-Flow exists to keep the loop flowing. It watches your project, runs tests w
 | test-flow-idle-gc-interval        | integer                           | 30       | Interval between idle GC checks.                                           |
 
 ** Concurrency and resources
-| Variable                       | Type     | Default | Description                                                       |
-|--------------------------------+----------+---------+-------------------------------------------------------------------|
-| test-flow-max-concurrent-runs   | integer  | 3       | Global cap on parallel test processes (across sessions).          |
-| test-flow-max-raw-output-bytes  | int or nil | 1048576 | Cap stored raw stdout/stderr per session (nil = unlimited).     |
+| Variable                       | Type       | Default | Description                                                 |
+|--------------------------------+------------+---------+-------------------------------------------------------------|
+| test-flow-max-concurrent-runs  | integer    |       3 | Global cap on parallel test processes (across sessions).    |
+| test-flow-max-raw-output-bytes | int or nil | 1048576 | Cap stored raw stdout/stderr per session (nil = unlimited). |
 
 ** Panel, UI, and header-line
-| Variable                         | Type                        | Default | Description                                                                    |
-|----------------------------------+-----------------------------+---------+--------------------------------------------------------------------------------|
-| test-flow-panel-side              | choice: right/bottom/left/top | right   | Where to display the side panel.                                               |
-| test-flow-panel-width             | integer                     | 42      | Panel width in columns.                                                        |
-| test-flow-icons                   | boolean                     | t       | Show per-test status icons (Unicode or all-the-icons).                         |
-| test-flow-toolbar-style           | choice: auto/icons/text     | auto    | Prefer icons when available, force icons, or always text.                      |
-| test-flow-view-headerline-enable  | boolean                     | t       | Show clickable controls in the panel’s header-line.                            |
-| test-flow-headerline-controls-order | list of symbols/:gap      | (run run-failed :gap watch :gap copy clear :gap detect goto :gap sessions dashboard :gap logging) | Order of header-line controls. |
-| test-flow-controls-registry       | alist (advanced)            | see code| Declarative controls (labels/icons/commands).                                  |
+| Variable                            | Type                          | Default                                                                                           | Description                                               |
+|-------------------------------------+-------------------------------+---------------------------------------------------------------------------------------------------+-----------------------------------------------------------|
+| test-flow-panel-side                | choice: right/bottom/left/top | right                                                                                             | Where to display the side panel.                          |
+| test-flow-panel-width               | integer                       | 42                                                                                                | Panel width in columns.                                   |
+| test-flow-icons                     | boolean                       | t                                                                                                 | Show per-test status icons (Unicode or all-the-icons).    |
+| test-flow-toolbar-style             | choice: auto/icons/text       | auto                                                                                              | Prefer icons when available, force icons, or always text. |
+| test-flow-view-headerline-enable    | boolean                       | t                                                                                                 | Show clickable controls in the panel’s header-line.       |
+| test-flow-headerline-controls-order | list of symbols/:gap          | (run run-failed :gap watch :gap copy clear :gap detect goto :gap sessions dashboard :gap logging) | Order of header-line controls.                            |
+| test-flow-controls-registry         | alist (advanced)              | see code                                                                                          | Declarative controls (labels/icons/commands).             |
 
 ** Icon settings (if you use all-the-icons)
-| Variable                            | Type            | Default | Description                                                   |
-|-------------------------------------+-----------------+---------+---------------------------------------------------------------|
-| test-flow-controls-use-graphic-icons | boolean         | t       | Prefer all-the-icons when available.                          |
-| test-flow-controls-icon-height       | number          | 0.9     | Uniform icon height in header-line.                           |
-| test-flow-controls-icon-raise        | number          | 0.11    | Vertical raise via ‘display’ property (fine-tunes alignment). |
-| test-flow-controls-icon-map          | alist           | mapping | Control-key → (provider . name) or per-state map.             |
-| test-flow-controls-icon-face-map     | alist           | mapping | Optional face overrides for non-toggle icons.                 |
-| test-flow-controls-toggle-on-face    | face/plist      | gray85  | Face for toggle icons when ON.                                |
-| test-flow-controls-toggle-off-face   | face/plist      | gray60  | Face for toggle icons when OFF.                               |
+| Variable                             | Type       | Default | Description                                                   |
+|--------------------------------------+------------+---------+---------------------------------------------------------------|
+| test-flow-controls-use-graphic-icons | boolean    | t       | Prefer all-the-icons when available.                          |
+| test-flow-controls-icon-height       | number     | 0.9     | Uniform icon height in header-line.                           |
+| test-flow-controls-icon-raise        | number     | 0.11    | Vertical raise via ‘display’ property (fine-tunes alignment). |
+| test-flow-controls-icon-map          | alist      | mapping | Control-key → (provider . name) or per-state map.             |
+| test-flow-controls-icon-face-map     | alist      | mapping | Optional face overrides for non-toggle icons.                 |
+| test-flow-controls-toggle-on-face    | face/plist | gray85  | Face for toggle icons when ON.                                |
+| test-flow-controls-toggle-off-face   | face/plist | gray60  | Face for toggle icons when OFF.                               |
 
 ** Copy failures and reporting
-| Variable                        | Type                      | Default | Description                                                                 |
-|---------------------------------+---------------------------+---------+-----------------------------------------------------------------------------|
-| test-flow-copy-format            | choice: plain/org/markdown| plain   | Format of copied failure report.                                            |
-| test-flow-copy-backtrace-limit   | int or nil               | nil     | Truncate each details/backtrace to this many chars.                         |
-| test-flow-copy-include-stdout    | boolean                  | nil     | Include raw stdout tail (capped by the same limit).                         |
-| test-flow-copy-include-stderr    | boolean                  | nil     | Include captured stderr tail (capped by the same limit).                    |
+| Variable                       | Type                       | Default | Description                                              |
+|--------------------------------+----------------------------+---------+----------------------------------------------------------|
+| test-flow-copy-format          | choice: plain/org/markdown | plain   | Format of copied failure report.                         |
+| test-flow-copy-backtrace-limit | int or nil                 | nil     | Truncate each details/backtrace to this many chars.      |
+| test-flow-copy-include-stdout  | boolean                    | nil     | Include raw stdout tail (capped by the same limit).      |
+| test-flow-copy-include-stderr  | boolean                    | nil     | Include captured stderr tail (capped by the same limit). |
 
 ** Session quality of life
-| Variable                             | Type      | Default | Description                                                       |
-|--------------------------------------+-----------+---------+-------------------------------------------------------------------|
-| test-flow-run-on-enable               | boolean   | nil     | If non-nil, run once when test-flow-mode is enabled.               |
-| test-flow-auto-detect-on-open         | boolean   | t       | Try to auto-detect external command when opening the panel.       |
-| test-flow-run-on-open                 | boolean   | t       | First open triggers a run when feasible.                          |
-| test-flow-log-enabled                 | boolean   | nil     | Print lightweight logs to /Messages/ (toggled via command).       |
-| test-flow-session-naming-function     | function  | default | (fn root) → name for “*test-flow: NAME/” buffer.                   |
+| Variable                          | Type     | Default | Description                                                 |
+|-----------------------------------+----------+---------+-------------------------------------------------------------|
+| test-flow-run-on-enable           | boolean  | nil     | If non-nil, run once when test-flow-mode is enabled.        |
+| test-flow-auto-detect-on-open     | boolean  | t       | Try to auto-detect external command when opening the panel. |
+| test-flow-run-on-open             | boolean  | t       | First open triggers a run when feasible.                    |
+| test-flow-log-enabled             | boolean  | nil     | Print lightweight logs to /Messages/ (toggled via command).   |
+| test-flow-session-naming-function | function | default | (fn root) → name for “*test-flow: NAME/” buffer.            |
 
 * Example configurations
 ** Minimal external command
