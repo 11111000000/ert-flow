@@ -30,7 +30,7 @@ Test-Flow exists to keep the loop flowing. It watches your project, runs tests w
   - Optional: all-the-icons for fancy toolbar/header icons.
 ** Package managers
   - package-vc-install:
-#+begin_src 
+#+begin_src emacs-lisp
 (use-package test-flow
   :init
   (unless (package-installed-p 'test-flow)
