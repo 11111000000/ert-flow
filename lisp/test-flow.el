@@ -1362,6 +1362,27 @@ When SELECT is non-nil, focus the panel window; otherwise do not steal focus."
       (test-flow--open-panel--display sess root (called-interactively-p 'interactive))
       (test-flow--open-panel--maybe-first-run sess runner ext-cmd* auto-did))))
 
+;;;###autoload
+(defun test-flow-toggle-panel ()
+  "Toggle the test-flow panel for the current project.
+
+If the panel is visible in side windows, close those side windows.
+Otherwise, open the panel (delegates to `test-flow-open-panel')."
+  (interactive)
+  (let* ((root (test-flow--project-root))
+         (bufname (test-flow--session-panel-name root))
+         (buf (get-buffer bufname))
+         (wins (when buf (get-buffer-window-list buf nil t)))
+         (closed nil))
+    (when (and wins (> (length wins) 0))
+      (dolist (w wins)
+        (when (window-parameter w 'window-side)
+          (delete-window w)
+          (setq closed t))))
+    (if closed
+        (message "test-flow: panel closed")
+      (test-flow-open-panel))))
+
 (defun test-flow--propertize (text result)
   "Return TEXT with RESULT stored as a text property."
   (propertize text 'test-flow--result result))
