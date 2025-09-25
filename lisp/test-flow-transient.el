@@ -165,6 +165,13 @@ If none found, show localized message."
      test-flow-panel-toggle)))
 
 ;;;###autoload
+(defun test-flow-cmd-toggle-watch ()
+  "Toggle automatic test running (watch) (wrapper)."
+  (interactive)
+  (test-flow--call-first-defined
+   '(test-flow-toggle-watch)))
+
+;;;###autoload
 (defun test-flow-cmd-toggle-headerline ()
   "Toggle Test Flow headerline (wrapper)."
   (interactive)
@@ -205,6 +212,7 @@ If none found, show localized message."
                   [:description (lambda () (test-flow-i18n 'sec-ui))
                                 ("p" test-flow-cmd-toggle-panel    :description (lambda () (test-flow-i18n 'panel-toggle)))
                                 ("f" test-flow-cmd-toggle-panel    :description (lambda () (test-flow-i18n 'panel-toggle)))
+                                ("w" test-flow-cmd-toggle-watch    :description (lambda () (test-flow-i18n 'watch-toggle)))
                                 ("h" test-flow-cmd-toggle-headerline :description (lambda () (test-flow-i18n 'headerline-toggle)))] ]))
 
 ;; -----------------------------------------------------------------------------
@@ -213,11 +221,6 @@ If none found, show localized message."
 
 (defcustom test-flow-global-transient-key "C-c f"
   "Keybinding (string) to invoke `test-flow-transient'."
-  :type 'string
-  :group 'test-flow)
-
-(defcustom test-flow-toggle-panel-key "C-c f f"
-  "Keybinding (string) to toggle the Test Flow panel."
   :type 'string
   :group 'test-flow)
 
@@ -288,9 +291,6 @@ SYM-CURRENT is a symbol holding currently active key string."
   (test-flow--bind 'test-flow--current-transient-key
                    test-flow-global-transient-key
                    #'test-flow-transient)
-  (test-flow--bind 'test-flow--current-panel-key
-                   test-flow-toggle-panel-key
-                   #'test-flow-cmd-toggle-panel)
   (test-flow--bind 'test-flow--current-detect-key
                    test-flow-detect-runner-key
                    #'test-flow-cmd-detect-runner)
@@ -329,17 +329,6 @@ SYM-CURRENT is a symbol holding currently active key string."
     (setq test-flow-global-transient-key key)
     (when test-flow-global-mode
       (test-flow--bind 'test-flow--current-transient-key key #'test-flow-transient))
-    (message (test-flow-i18n 'key-updated) old key)))
-
-;;;###autoload
-(defun test-flow-set-toggle-panel-key (key)
-  "Interactively set `test-flow-toggle-panel-key' to KEY and rebind."
-  (interactive
-   (list (key-description (read-key-sequence "New key for panel toggle: "))))
-  (let ((old test-flow-toggle-panel-key))
-    (setq test-flow-toggle-panel-key key)
-    (when test-flow-global-mode
-      (test-flow--bind 'test-flow--current-panel-key key #'test-flow-cmd-toggle-panel))
     (message (test-flow-i18n 'key-updated) old key)))
 
 ;;;###autoload
