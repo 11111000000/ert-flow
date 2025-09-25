@@ -9,56 +9,48 @@
       f: nixpkgs.lib.genAttrs [ "x86_64-linux" "aarch64-linux" ] (system:
         f (import nixpkgs { inherit system; }));
   in {
-    # Разделяем определение emacs с нужными пакетами, чтобы использовать его и в devShell, и в apps.
+    # Лёгкий devShell: без Emacs, только инструменты. Emacs подхватывается в apps по запросу.
     devShells = forAllSystems (pkgs:
-      let
-        emacsWithPkgs =
-          (pkgs.emacsPackagesFor pkgs.emacs30-nox).emacsWithPackages
-            (epkgs: [
-              epkgs.melpaPackages.undercover
-              epkgs.melpaPackages.dash
-              epkgs.melpaPackages.f
-              epkgs.melpaPackages.s
-              epkgs.melpaPackages.pcache
-              epkgs.melpaPackages.request
-            ]);
-      in {
+      {
         default = pkgs.mkShell {
           packages = [
-            emacsWithPkgs
             pkgs.cask
             pkgs.git
             pkgs.cacert
             pkgs.curl
           ];
           shellHook = ''
-            export CASK_EMACS=$(command -v emacs)
-            export EMACS=$(command -v emacs)
+            # Сертификаты для HTTPS (emacs/cask/	curl)
+            export SSL_CERT_FILE=${pkgs.cacert}/etc/ssl/certs/ca-bundle.crt
+            export NIX_SSL_CERT_FILE=${pkgs.cacert}/etc/ssl/certs/ca-bundle.crt
+            # Если у вас есть системный emacs, cask сможет его использовать:
+            # export CASK_EMACS=$(command -v emacs || true)
           '';
         };
       });
 
     # Утилиты запуска:
-    # - nix run .#tests    → запускает batch-ERT через tests/run-tests.el или t/run-tests.el
-    # - nix run .#coverage → запускает scripts/coverage.el или s/coverage.el (undercover → LCOV)
-    # - nix run .          → alias на .#tests (apps.default)
+    # - nix run .#tests        → batch-ERT через tests/run-tests.el или t/run-tests.el (минимальный Emacs)
+    # - nix run .#coverage     → scripts/coverage.el (Emacs с undercover)
+    # - nix run .#cask-install → cask install с Emacs, в котором уже есть package-build
+    # - nix run .              → alias на .#tests (apps.default)
     apps = forAllSystems (pkgs:
       let
-        emacsWithPkgs =
+        # Базовый минимальный Emacs для тестов (без лишних elpa)
+        emacsBase = pkgs.emacs30-nox;
+
+        # Emacs c undercover + package-build для покрытия и cask bootstrap
+        emacsCoverage =
           (pkgs.emacsPackagesFor pkgs.emacs30-nox).emacsWithPackages
             (epkgs: [
               epkgs.melpaPackages.undercover
-              epkgs.melpaPackages.dash
-              epkgs.melpaPackages.f
-              epkgs.melpaPackages.s
-              epkgs.melpaPackages.pcache
-              epkgs.melpaPackages.request
+              epkgs.melpaPackages."package-build"
             ]);
 
         makeApp = name: text:
           let drv = pkgs.writeShellApplication {
             inherit name;
-            runtimeInputs = [ emacsWithPkgs ];
+            runtimeInputs = [ ];
             text = text;
           };
           in { type = "app"; program = "${drv}/bin/${name}"; };
@@ -73,7 +65,7 @@
             echo "No run-tests.el found under tests/ or t/" >&2
             exit 1
           fi
-          exec ${emacsWithPkgs}/bin/emacs -Q --batch -l "$TARGET"
+          exec ${emacsBase}/bin/emacs -Q --batch -l "$TARGET"
         '';
 
         coverage = makeApp "coverage" ''
@@ -86,28 +78,27 @@
             echo "No coverage.el found under scripts/ or s/" >&2
             exit 1
           fi
-          exec ${emacsWithPkgs}/bin/emacs -Q --batch -l "$TARGET"
+          exec ${emacsCoverage}/bin/emacs -Q --batch -l "$TARGET"
         '';
 
-        # alias по умолчанию, чтобы nix run . работал без #tests
+        cask-install = makeApp "cask-install" ''
+          set -euo pipefail
+          export SSL_CERT_FILE=${pkgs.cacert}/etc/ssl/certs/ca-bundle.crt
+          export NIX_SSL_CERT_FILE=${pkgs.cacert}/etc/ssl/certs/ca-bundle.crt
+          export CASK_EMACS=${emacsCoverage}/bin/emacs
+          exec ${pkgs.cask}/bin/cask install
+        '';
+
+        # alias по умолчанию
         default = tests;
       });
 
-    # checks: nix flake check будет прогонять тесты
+    # checks: nix flake check будет прогонять тесты с минимальным Emacs
     checks = forAllSystems (pkgs:
       let
-        emacsWithPkgs =
-          (pkgs.emacsPackagesFor pkgs.emacs30-nox).emacsWithPackages
-            (epkgs: [
-              epkgs.melpaPackages.undercover
-              epkgs.melpaPackages.dash
-              epkgs.melpaPackages.f
-              epkgs.melpaPackages.s
-              epkgs.melpaPackages.pcache
-              epkgs.melpaPackages.request
-            ]);
+        emacsBase = pkgs.emacs30-nox;
       in {
-        tests = pkgs.runCommand "test-flow-tests" { buildInputs = [ emacsWithPkgs ]; } ''
+        tests = pkgs.runCommand "test-flow-tests" { buildInputs = [ emacsBase ]; } ''
           set -euo pipefail
           if [ -f tests/run-tests.el ]; then
             TARGET=tests/run-tests.el
@@ -117,7 +108,7 @@
             echo "No run-tests.el found under tests/ or t/" >&2
             exit 1
           fi
-          ${emacsWithPkgs}/bin/emacs -Q --batch -l "$TARGET"
+          ${emacsBase}/bin/emacs -Q --batch -l "$TARGET"
           mkdir -p "$out"
           echo "ok" > "$out/result"
         '';
@@ -126,20 +117,11 @@
     # Дополнительно: default package — исполняемый скрипт запуска тестов (nix build .)
     packages = forAllSystems (pkgs:
       let
-        emacsWithPkgs =
-          (pkgs.emacsPackagesFor pkgs.emacs30-nox).emacsWithPackages
-            (epkgs: [
-              epkgs.melpaPackages.undercover
-              epkgs.melpaPackages.dash
-              epkgs.melpaPackages.f
-              epkgs.melpaPackages.s
-              epkgs.melpaPackages.pcache
-              epkgs.melpaPackages.request
-            ]);
+        emacsBase = pkgs.emacs30-nox;
       in {
         default = pkgs.writeShellApplication {
           name = "test-flow-tests";
-          runtimeInputs = [ emacsWithPkgs ];
+          runtimeInputs = [ emacsBase ];
           text = ''
             set -euo pipefail
             if [ -f tests/run-tests.el ]; then
@@ -150,7 +132,7 @@
               echo "No run-tests.el found under tests/ or t/" >&2
               exit 1
             fi
-            exec ${emacsWithPkgs}/bin/emacs -Q --batch -l "$TARGET"
+            exec ${emacsBase}/bin/emacs -Q --batch -l "$TARGET"
           '';
         };
       });

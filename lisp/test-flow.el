@@ -416,6 +416,22 @@ If VALUE is a string, wrap with shell runner."
       (list sh "-lc" value)))
    (t nil)))
 
+(defun test-flow--nix-current-system ()
+  "Best-effort guess of Nix currentSystem string (e.g., x86_64-linux, aarch64-darwin)."
+  (let* ((cfg (or system-configuration ""))
+         (os (cond
+              ((eq system-type 'darwin) "darwin")
+              ((memq system-type '(gnu/linux gnu gnu/kfreebsd)) "linux")
+              ((eq system-type 'windows-nt) "windows")
+              (t "linux")))
+         (arch (cond
+                ((string-match-p "\\`x86_64" cfg) "x86_64")
+                ((or (string-match-p "aarch64" cfg)
+                     (string-match-p "arm64" cfg)) "aarch64")
+                ((string-match-p "\\`i[3-6]86" cfg) "i686")
+                (t "x86_64"))))
+    (format "%s-%s" arch os)))
+
 ;;;; Parsing ERT batch output
 
 (defun test-flow--batch-clean-name (s)
@@ -1245,16 +1261,36 @@ status, file/line, tags and backtraces."
                (eq runner 'external-command)
                (or (not ext-cmd) mismatch))
       (let ((found (funcall local-run-tests)))
-        (when found
-          (test-flow--set-conf sess 'external-command (list "emacs" "-Q" "--batch" "-l" found))
-          (setq ext-cmd (test-flow--conf sess 'external-command test-flow-external-command))
-          (setq auto-did-detect t)
-          (test-flow--log (if mismatch
-                              "auto-detect: replaced alien external cmd with %s"
-                            "auto-detect: set external cmd to %s")
-                          (if (string-match-p "/test[s]?/run-tests\\.el\\'" found)
-                              (file-relative-name found root*)
-                            found)))))
+        (if found
+            (progn
+              (test-flow--set-conf sess 'external-command (list "emacs" "-Q" "--batch" "-l" found))
+              (setq ext-cmd (test-flow--conf sess 'external-command test-flow-external-command))
+              (setq auto-did-detect t)
+              (test-flow--log (if mismatch
+                                  "auto-detect: replaced alien external cmd with %s"
+                                "auto-detect: set external cmd to %s")
+                              (if (string-match-p "/test[s]?/run-tests\\.el\\'" found)
+                                  (file-relative-name found root*)
+                                found)))
+          ;; No local run-tests.el — try to infer from flake.nix
+          (let ((flake (expand-file-name "flake.nix" root*)))
+            (when (file-exists-p flake)
+              (let* ((s (with-temp-buffer
+                          (insert-file-contents-literally flake)
+                          (buffer-string)))
+                     (sys (test-flow--nix-current-system))
+                     (has-apps-tests (string-match-p "apps\\(?:.\\|\n\\)*?tests[ \t]*=" s))
+                     (has-checks-ert (string-match-p "checks\\(?:.\\|\n\\)*?ert[ \t]*=" s))
+                     (has-checks-tests (string-match-p "checks\\(?:.\\|\n\\)*?tests[ \t]*=" s))
+                     (cmd (cond
+                           (has-apps-tests (list "nix" "run" ".#tests"))
+                           (has-checks-ert (list "nix" "build" "-L" "--print-build-logs" "--no-link" (format ".#checks.%s.ert" sys)))
+                           (has-checks-tests (list "nix" "build" "-L" "--print-build-logs" "--no-link" (format ".#checks.%s.tests" sys)))
+                           (t (list "nix" "flake" "check")))))
+                (test-flow--set-conf sess 'external-command cmd)
+                (setq ext-cmd (test-flow--conf sess 'external-command test-flow-external-command))
+                (setq auto-did-detect t)
+                (test-flow--log "auto-detect: set external cmd to %S (from flake.nix)" cmd)))))))
     (cons ext-cmd auto-did-detect)))
 
 (defun test-flow--open-panel--display (sess root &optional select)
@@ -2396,7 +2432,10 @@ Does nothing when point is not on a suite header or test line."
 
 Heuristics (in order):
 - tests/run-tests.el or test/run-tests.el → emacs -Q --batch -l <path>
-- flake.nix present → nix run .#tests
+- flake.nix:
+  - apps.tests → nix run .#tests
+  - checks.<name> (ert/tests) → nix build .#checks.<system>.<name>
+  - otherwise → nix flake check (fallback)
 - Cask present → cask exec ert-runner
 
 If multiple candidates are available, prompt to choose."
@@ -2408,6 +2447,7 @@ If multiple candidates are available, prompt to choose."
          (flake (expand-file-name "flake.nix" root))
          (cask  (expand-file-name "Cask" root))
          (cands nil))
+    ;; Direct entrypoints
     (when (file-exists-p json)
       (push (cons "emacs -Q --batch -l tests/run-tests.el"
                   (list "emacs" "-Q" "--batch" "-l" json))
@@ -2416,10 +2456,29 @@ If multiple candidates are available, prompt to choose."
       (push (cons "emacs -Q --batch -l test/run-tests.el"
                   (list "emacs" "-Q" "--batch" "-l" json2))
             cands))
+    ;; Flake-based entrypoints
     (when (file-exists-p flake)
-      (push (cons "nix run .#tests"
-                  (list "nix" "run" ".#tests"))
-            cands))
+      (let* ((s (with-temp-buffer
+                  (insert-file-contents-literally flake)
+                  (buffer-string)))
+             (sys (test-flow--nix-current-system))
+             (has-apps-tests (string-match-p "apps\\(?:.\\|\n\\)*?tests[ \t]*=" s))
+             (has-checks-ert (string-match-p "checks\\(?:.\\|\n\\)*?ert[ \t]*=" s))
+             (has-checks-tests (string-match-p "checks\\(?:.\\|\n\\)*?tests[ \t]*=" s)))
+        (when has-apps-tests
+          (push (cons "nix run .#tests" (list "nix" "run" ".#tests")) cands))
+        (when has-checks-ert
+          (push (cons (format "nix build -L --no-link .#checks.%s.ert" sys)
+                      (list "nix" "build" "-L" "--print-build-logs" "--no-link" "--rebuild" (format ".#checks.%s.ert" sys)))
+                cands))
+        (when has-checks-tests
+          (push (cons (format "nix build -L --no-link .#checks.%s.tests" sys)
+                      (list "nix" "build" "-L" "--print-build-logs" "--no-link" "--rebuild" (format ".#checks.%s.tests" sys)))
+                cands))
+        ;; Fallback (heavy) if nothing specific matched
+        (when (and (not has-apps-tests) (not has-checks-ert) (not has-checks-tests))
+          (push (cons "nix flake check" (list "nix" "flake" "check")) cands))))
+    ;; Cask runner
     (when (file-exists-p cask)
       ;; Common Cask-based runner; depends on ert-runner being configured
       (push (cons "cask exec ert-runner"

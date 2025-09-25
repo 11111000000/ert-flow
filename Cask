@@ -9,4 +9,6 @@
 
 (development
  (depends-on "ert-runner")
- (depends-on "undercover"))
+ (depends-on "undercover")
+ (depends-on "dash")
+ (depends-on "shut-up"))
