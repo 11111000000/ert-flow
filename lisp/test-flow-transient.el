@@ -224,16 +224,6 @@ If none found, show localized message."
   :type 'string
   :group 'test-flow)
 
-(defcustom test-flow-detect-runner-key "C-c f d"
-  "Keybinding (string) to detect and set test runner."
-  :type 'string
-  :group 'test-flow)
-
-(defcustom test-flow-copy-last-report-key "C-c f y"
-  "Keybinding (string) to copy path to the last test report."
-  :type 'string
-  :group 'test-flow)
-
 (defcustom test-flow-global-transient-enable t
   "Enable `test-flow-global-mode' on load."
   :type 'boolean
@@ -290,13 +280,7 @@ SYM-CURRENT is a symbol holding currently active key string."
 (defun test-flow--apply-global-bindings ()
   (test-flow--bind 'test-flow--current-transient-key
                    test-flow-global-transient-key
-                   #'test-flow-transient)
-  (test-flow--bind 'test-flow--current-detect-key
-                   test-flow-detect-runner-key
-                   #'test-flow-cmd-detect-runner)
-  (test-flow--bind 'test-flow--current-copy-report-key
-                   test-flow-copy-last-report-key
-                   #'test-flow-cmd-copy-last-report))
+                   #'test-flow-transient))
 
 (defun test-flow--remove-global-bindings ()
   (dolist (k (list test-flow--current-transient-key
@@ -329,28 +313,6 @@ SYM-CURRENT is a symbol holding currently active key string."
     (setq test-flow-global-transient-key key)
     (when test-flow-global-mode
       (test-flow--bind 'test-flow--current-transient-key key #'test-flow-transient))
-    (message (test-flow-i18n 'key-updated) old key)))
-
-;;;###autoload
-(defun test-flow-set-detect-runner-key (key)
-  "Interactively set `test-flow-detect-runner-key' to KEY and rebind."
-  (interactive
-   (list (key-description (read-key-sequence "New key for detect runner: "))))
-  (let ((old test-flow-detect-runner-key))
-    (setq test-flow-detect-runner-key key)
-    (when test-flow-global-mode
-      (test-flow--bind 'test-flow--current-detect-key key #'test-flow-cmd-detect-runner))
-    (message (test-flow-i18n 'key-updated) old key)))
-
-;;;###autoload
-(defun test-flow-set-copy-last-report-key (key)
-  "Interactively set `test-flow-copy-last-report-key' to KEY and rebind."
-  (interactive
-   (list (key-description (read-key-sequence "New key for copy last report: "))))
-  (let ((old test-flow-copy-last-report-key))
-    (setq test-flow-copy-last-report-key key)
-    (when test-flow-global-mode
-      (test-flow--bind 'test-flow--current-copy-report-key key #'test-flow-cmd-copy-last-report))
     (message (test-flow-i18n 'key-updated) old key)))
 
 ;; Enable on load if requested.

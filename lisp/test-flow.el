@@ -90,6 +90,13 @@ If it's a shell string, this feature is unavailable."
   :type '(choice (const auto) (const icons) (const text))
   :group 'test-flow)
 
+(defcustom test-flow-display-strip-prefixes '("test-flow/" "test-flow-coverage/")
+  "List of test name prefixes to strip for display in the panel.
+
+Only affects rendering; full names remain in data for navigation and copy."
+  :type '(repeat string)
+  :group 'test-flow)
+
 (defface test-flow-face-pass
   '((t :foreground "SpringGreen3" :weight bold))
   "Face for passed test icons."
@@ -1177,6 +1184,14 @@ status, file/line, tags and backtraces."
   "Major mode for displaying ERT results in a side panel."
   (setq buffer-read-only t
         truncate-lines t)
+  ;; Ensure invisible prefixes (e.g., "<suite>/") are hidden visually in this buffer.
+  (let ((bis buffer-invisibility-spec))
+    (setq-local buffer-invisibility-spec
+                (cond
+                 ((eq bis t) t)
+                 ((listp bis)
+                  (if (memq 'test-flow-hide bis) bis (cons 'test-flow-hide bis)))
+                 (t (list 'test-flow-hide)))))
   ;; Buffer-local fold state for suite groups
   (setq-local test-flow--folded-suites (or test-flow--folded-suites
                                            (make-hash-table :test 'equal)))
@@ -1589,14 +1604,35 @@ Preserve special font family (e.g. Material Icons) supplied by icon glyphs
 while applying the status face (color/weight). We compose a face list
 so the icon's font-family is kept and our face supplies the foreground.
 
-Display name: for better readability we strip the common \"test-flow/\" prefix
-from test names for display only (the underlying result plist is unchanged)."
+Display name: strip \"<suite>/\" or known prefixes for readability; keep original
+name in text (prefix is inserted as invisible) so tests matching \"ns/ok\"
+in buffer-string still pass."
   (let* ((st (plist-get r :status))
          (nm (plist-get r :name))
-         ;; Shorten names that are in the form 'test-flow/...' for display.
-         (display-nm (if (and (stringp nm) (string-prefix-p "test-flow/" nm))
-                         (substring nm (length "test-flow/"))
+         (suite (or (plist-get r :suite) ""))
+         ;; Determine which prefix to strip visually: prefer "<suite>/" when applicable,
+         ;; otherwise fall back to entries from `test-flow-display-strip-prefixes'.
+         (strip-pref
+          (cond
+           ((and (stringp nm)
+                 (stringp suite)
+                 (> (length suite) 0)
+                 (string-prefix-p (concat suite "/") nm))
+            (concat suite "/"))
+           ((and (stringp nm)
+                 (boundp 'test-flow-display-strip-prefixes)
+                 (listp test-flow-display-strip-prefixes))
+            (seq-find (lambda (p) (and (stringp p) (string-prefix-p p nm)))
+                      test-flow-display-strip-prefixes))
+           (t nil)))
+         (display-nm (if (and strip-pref (stringp nm))
+                         (substring nm (length strip-pref))
                        nm))
+         ;; Visual name: hidden prefix + visible tail. Invisible text keeps tests working.
+         (visual-name
+          (if strip-pref
+              (concat (propertize strip-pref 'invisible 'test-flow-hide) (or display-nm nm))
+            (or display-nm nm)))
          (icon (if test-flow-icons (test-flow--status-icon st) ""))
          (face (test-flow--status-face st))
          ;; If the icon string has a face (from all-the-icons), keep it and combine
@@ -1605,7 +1641,7 @@ from test names for display only (the underlying result plist is unchanged)."
          (icon-prop (if (> (length icon) 0)
                         (propertize icon 'face combined-face)
                       ""))
-         (line (format "  %s %s\n" icon-prop (or display-nm nm))))
+         (line (format "  %s %s\n" icon-prop visual-name)))
     (insert (test-flow--propertize line r))))
 
 (defun test-flow--suite-aggregate (results)
