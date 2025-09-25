@@ -1771,17 +1771,25 @@ Note: do not override icon color with a uniform button face."
 (defun test-flow--panel-status-icon ()
   "Return an icon for the Status block (all-the-icons if available, else text).
 
-Preserve the icon's font family from all-the-icons so the glyph renders
-with the correct font; only add our foreground color on top."
+Prefer a summary/analytics-like icon; fall back through several options to a document icon.
+We still add only foreground color; font family comes from all-the-icons."
   (cond
    ((and (featurep 'all-the-icons)
          (fboundp 'all-the-icons-material)
          (display-graphic-p)
          (find-font (font-spec :family "Material Icons")))
-    ;; Ask all-the-icons to apply the foreground; this keeps the Material Icons family.
-    (all-the-icons-material "assignment" :v-adjust 0.02 :height 1.0
-                            :face '(:foreground "#b3cfff")))
-   ((char-displayable-p ?📝) "📝")
+    (let ((candidates '("summarize" "analytics" "query_stats" "insights"
+                        "assessment" "bar_chart" "topic" "assignment")))
+      (or
+       (cl-loop for name in candidates
+                for s = (ignore-errors
+                          (all-the-icons-material name :v-adjust 0.02 :height 1.0
+                                                  :face '(:foreground "#b3cfff")))
+                when (stringp s) return s)
+       ;; very last resort
+       (all-the-icons-material "assignment" :v-adjust 0.02 :height 1.0
+                               :face '(:foreground "#b3cfff")))))
+   ((char-displayable-p ?≡) "≡")
    (t "[S]")))
 
 (defun test-flow--panel-summary-icon ()
@@ -1876,39 +1884,79 @@ with the correct font; only add our foreground color on top."
          (parser-str (format "%s" parser-used))
          (active test-flow--active-run-count)
          (queued (length test-flow--run-queue))
-         (dur-str (plist-get (apply #'test-flow--summary-counters (list sum results)) :dur-str))
-         ;; Compose heading: avoid adding (propertize ...) to the *whole* string, only apply :weight bold to word "Status"
+         (cnt (apply #'test-flow--summary-counters (list sum results)))
+         (dur-str (plist-get cnt :dur-str))
+         (total (plist-get cnt :total))
+         (passed (plist-get cnt :passed))
+         (failed (plist-get cnt :failed))
+         (error  (plist-get cnt :error))
+         (skipped (plist-get cnt :skipped))
+         (unexpected (plist-get cnt :unexpected))
+         ;; Compose heading
          (arrow-len (length arrow))
          (icon-len (length icon))
          (status-word " Status")
-         (label (concat arrow " " icon status-word))
+         (label-base (concat arrow " " icon status-word))
          (label-str
           (copy-sequence
-           (concat label
-                   (when folded
-                     (concat " "
-                             (test-flow--status-counters-str sum results)))
-                   "\n")))
+           (if folded
+               (concat label-base
+                       (format " %d (P:%d F:%d E:%d S:%d U:%d)"
+                               (or total 0) (or passed 0) (or failed 0)
+                               (or error 0) (or skipped 0) (or unexpected 0))
+                       "\n")
+             (concat label-base "\n"))))
          (status-pos (string-match "Status" label-str)))
-    ;; Make only "Status" bold, not the whole string (to avoid underline/other theme effects)
-    (when status-pos
-      (add-text-properties status-pos (+ status-pos (length "Status"))
-                           '(face (:weight bold)) label-str)
-      ;; Only highlight and show hand cursor over the word "Status"
-      (add-text-properties status-pos (+ status-pos (length "Status"))
-                           '(mouse-face highlight pointer hand) label-str))
-    ;; Heading with toggle
-    (insert-text-button
-     label-str
-     'face '(:underline nil)  ;; remove underline, keep icon color (no foreground here)
-     'mouse-face nil
-     'follow-link t
-     'help-echo "Fold/unfold Status (mouse-1, TAB)"
-     'keymap test-flow--status-button-map
-     'test-flow--nav 'status
-     'action (lambda (_btn)
-               (test-flow-toggle-status)))
-    ;; Body when unfolded (each line with its own icon)
+    ;; Insert button first with a neutral face (no underline), then re-apply colored segments in buffer.
+    (let ((beg (point)))
+      (insert-text-button
+       label-str
+       'face '(:inherit default :underline nil)
+       'mouse-face nil
+       'follow-link t
+       'help-echo "Fold/unfold Status (mouse-1, TAB)"
+       'keymap test-flow--status-button-map
+       'test-flow--nav 'status
+       'action (lambda (_btn)
+                 (test-flow-toggle-status)))
+      (let ((end (point)))
+        ;; Bold and highlight only the word "Status"
+        (when status-pos
+          (add-text-properties (+ beg status-pos) (+ beg status-pos (length "Status"))
+                               '(face (:weight bold)) nil)
+          (add-text-properties (+ beg status-pos) (+ beg status-pos (length "Status"))
+                               '(mouse-face highlight pointer hand) nil))
+        ;; Restore icon face (Material Icons family + color) so Nerd Font doesn't take over.
+        (let* ((icon-start (+ beg arrow-len 1)) ;; after arrow + space
+               (icon-end   (+ icon-start icon-len))
+               (icon-face  (or (get-text-property 0 'face icon)
+                               (get-text-property 0 'font-lock-face icon))))
+          (when (and (< icon-start icon-end) icon-face)
+            (add-text-properties icon-start icon-end (list 'face icon-face) nil)))
+        ;; In folded state, colorize counters P/F/E/S/U within the buffer (overriding the button face).
+        (when folded
+          (let* ((base-len (length label-base))
+                 (cstart (+ beg base-len))
+                 (u-face (if (> (or unexpected 0) 0)
+                             'test-flow-face-fail
+                           'test-flow-face-pass)))
+            (when (< cstart end)
+              (save-excursion
+                ;; P/F/E/S
+                (dolist (spec '(("P:[0-9]+" . test-flow-face-pass)
+                                ("F:[0-9]+" . test-flow-face-fail)
+                                ("E:[0-9]+" . test-flow-face-error)
+                                ("S:[0-9]+" . test-flow-face-skip)))
+                  (goto-char cstart)
+                  (while (re-search-forward (car spec) end t)
+                    (add-text-properties (match-beginning 0) (match-end 0)
+                                         (list 'face (cdr spec)) nil)))
+                ;; U (conditional: green if 0, red if >0)
+                (goto-char cstart)
+                (while (re-search-forward "U:[0-9]+" end t)
+                  (add-text-properties (match-beginning 0) (match-end 0)
+                                       (list 'face u-face) nil))))))))
+    ;; Body when unfolded
     (unless folded
       (let ((mk (lambda (icon-str body)
                   (insert (propertize (format "  %s %s" icon-str body)
