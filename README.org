@@ -256,7 +256,7 @@ Test-Flow exists to keep the loop flowing. It watches your project, runs tests w
 - Use filters (P/F/E/S, / regexp, T tags) to focus on what matters right now.
 - Copy failures in org format for issue trackers that love org’s structured blocks. Your future self (and coworkers) will thank you.
 
-* Troubleshooting (and gentle humor)
+* Troubleshooting
 - Icons look plain
   - That’s okay! Unicode mode is intentional. Install all-the-icons for fancier looks. If your fonts and ligatures behave, Emacs will too (most of the time).
 - in-emacs-ert freezes Emacs
