@@ -58,17 +58,13 @@
 
 (defvar test-flow-headerline--global-map
   (let ((m (make-sparse-keymap)))
-    ;; Поглотить нажатие и перетаскивание
+    ;; Поглотить нажатие и перетаскивание в header-line
     (define-key m [header-line down-mouse-1] #'test-flow-headerline--consume)
     (define-key m [header-line drag-mouse-1] #'test-flow-headerline--consume)
-    ;; Выполнить на отпускание
+    ;; Выполнить команду на отпускание в header-line
     (define-key m [header-line mouse-1] #'test-flow-headerline--on-mouse)
-    ;; Подстраховка на случай «обычных» событий без префикса header-line
-    (define-key m [down-mouse-1] #'test-flow-headerline--consume)
-    (define-key m [drag-mouse-1] #'test-flow-headerline--consume)
-    (define-key m [mouse-1] #'test-flow-headerline--on-mouse)
     m)
-  "Глобальная keymap для всей строки header-line.")
+  "Глобальная keymap для всей строки header-line (не перехватывает клики вне header-line).")
 
 (defun test-flow-headerline--fallback-segments ()
   "Return a minimal textual controls list for header-line as a fallback."

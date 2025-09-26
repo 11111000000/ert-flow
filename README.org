@@ -87,6 +87,44 @@ Test-Flow exists to keep the loop flowing. It watches your project, runs tests w
   - n/p (or j/k) — Next/previous item
   - Filters: P/F/E/S/A — status filters; / — name regexp; T — tags; C — clear filters
 
+* Modular architecture and extension points
+- Entry points
+  - test-flow.el — legacy monolith entry (stable public commands remain)
+  - test-flow-modular.el — modular aggregator; (require 'test-flow-modular) also provides 'test-flow
+- Core modules (hard deps)
+  - test-flow-core.el
+    - Sessions: registry, cl-defstruct, safe accessors, per-session config (conf get/set)
+    - Project root resolution, lightweight logging, utilities (suite-of, normalize-command, nix currentSystem)
+  - test-flow-parse.el
+    - Parsers: ERT batch и JSON; диспетчер test-flow-parse-output ('auto|'json|'ert-batch)
+    - Независим от UI/runner; устойчив к шумному выводу
+  - test-flow-runner.el
+    - Реализации очереди/процессов/сентинела, in-Emacs path; публичные команды
+    - Хуки: test-flow-before-run-hook, test-flow-after-run-hook
+  - test-flow-panel.el
+    - Публичные команды панели (пока обёртки), фильтры, навигация
+  - test-flow-render.el
+    - Вынесен рендер: иконки/фейсы/счётчики, группировка/вставки, пайплайн рендера (context/insert/restore/render)
+  - test-flow-watch.el
+    - Реализации вотчера (after-save, file-notify, debounce, idle-GC); делегаты из монолита
+  - test-flow-copy.el
+    - Полноценная реализация copy-failures (monolith делегирует сюда)
+- Optional integrations/UI (soft deps)
+  - test-flow-headerline.el — header-line renderer with caching and click handling
+  - test-flow-view-controls.el — declarative controls and segment rendering
+  - test-flow-controls-icons.el — graphic icons provider (all-the-icons)
+  - test-flow-coverage.el — LCOV loader, overlays, panel block; auto-loads via test-flow-after-run-hook
+  - test-flow-transient.el — global transient and keybindings
+  - test-flow-i18n.el — localized labels/messages for controls and transient
+- Hooks and contracts
+  - test-flow-before-run-hook (sess) — before a run starts
+  - test-flow-after-run-hook (sess summary results) — after parsing and storage
+  - Copy helpers accept user options: test-flow-copy-format, test-flow-copy-backtrace-limit, test-flow-copy-include-stdout/stderr
+- Migration notes
+  - Monolith делегирует в модули (parse/watch/copy/runner/render); публичные имена команд сохранены
+  - Панельный режим остаётся в монолите, но рендер целиком вынесен в test-flow-render (монолит делегирует)
+  - Все опциональные модули тянутся мягко; без них доступен Unicode/text fallback
+
 * Concepts
 - Sessions
   - One session per project (project.el root). Each holds: panel buffer, details buffer, watcher state, last results/summary, process, queue.

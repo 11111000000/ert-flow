@@ -27,12 +27,12 @@
 (require 'subr-x)
 
 ;; Soft deps: avoid hard requires to keep module optional
-(declare-function test-flow--project-root "test-flow" ())
-(declare-function test-flow--get-session "test-flow" (&optional root))
-(declare-function test-flow--session-panel-name "test-flow" (root))
-(declare-function test-flow--render "test-flow" ())
-(declare-function test-flow--session-list "test-flow" ())
-(declare-function test-flow--session-root "test-flow" (sess))
+(declare-function test-flow--project-root "test-flow-core" ())
+(declare-function test-flow--get-session "test-flow-core" (&optional root))
+(declare-function test-flow--session-panel-name "test-flow-core" (root))
+;; (declare-function test-flow--render "test-flow-render" ())
+(declare-function test-flow--session-list "test-flow-core" ())
+(declare-function test-flow--session-root "test-flow-core" (sess))
 
 ;;;###autoload
 (defgroup test-flow-coverage nil
@@ -305,7 +305,17 @@ FILES is an alist of (FILE . PLIST) with keys:
   (let* ((sum (test-flow-coverage--summary-for-sess sess))
          (files (test-flow-coverage--files-for-sess sess))
          (root (and sess (if (fboundp 'test-flow--project-root) (test-flow--project-root) default-directory))))
-    (insert (propertize "Coverage\n" 'face 'bold))
+    (let* ((icon
+            (cond
+             ((and (featurep 'all-the-icons)
+                   (display-graphic-p)
+                   (fboundp 'all-the-icons-material)
+                   (find-font (font-spec :family "Material Icons")))
+              (all-the-icons-material "bar_chart" :height 1.0 :v-adjust 0.02
+                                      :face '(:foreground "LightSkyBlue3")))
+             ((char-displayable-p ?📊) "📊")
+             (t "[C]"))))
+      (insert (concat icon " " (propertize "Coverage" 'face 'bold) "\n")))
     (if (not sum)
         (insert "  No coverage data. M-x test-flow-coverage-load\n\n")
       (let* ((lf (alist-get 'lines-found sum))
@@ -346,6 +356,18 @@ FILES is an alist of (FILE . PLIST) with keys:
                              (forward-line (1- (apply #'min miss)))))
                  'face 'default))))
           (insert "\n")))))))
+
+;; Integrate with runner hook (auto-load coverage after each run) if enabled.
+(defvar test-flow-after-run-hook nil
+  "Hook run after a test run finishes. Args: (sess summary results).")
+
+(defun test-flow-coverage--after-run-autoload (_sess _summary _results)
+  "Hook function: auto-load LCOV after a run when `test-flow-coverage-auto-load' is non-nil."
+  (when test-flow-coverage-auto-load
+    (ignore-errors (test-flow-coverage-load t))))
+
+;; Register once on load (idempotent across reloads because we add a named function).
+(add-hook 'test-flow-after-run-hook #'test-flow-coverage--after-run-autoload)
 
 (provide 'test-flow-coverage)
 ;;; test-flow-coverage.el ends here
