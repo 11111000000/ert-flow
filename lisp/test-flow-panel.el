@@ -361,7 +361,8 @@ selected runner:
       (setq default-directory (file-name-as-directory root))
       (test-flow-panel-mode))
     (let ((win (display-buffer-in-side-window buf `((side . ,side) (window-width . ,width)))))
-      (when win (select-window win)))
+      (when (and win (called-interactively-p 'interactive))
+        (select-window win)))
     (let ((test-flow--panel-buffer-name bufname))
       (test-flow--render))))
 
