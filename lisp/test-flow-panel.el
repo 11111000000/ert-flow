@@ -524,6 +524,8 @@ selected runner:
     (define-key map (kbd "y") #'test-flow-copy-failures)
     (define-key map (kbd "x") #'test-flow-clear)
     (define-key map (kbd "d") #'test-flow-detect-runner)
+    ;; Live progress
+    (define-key map (kbd "$") #'test-flow-show-progress)
     ;; Navigation & details
     (define-key map (kbd "n") #'test-flow-next-item)
     (define-key map (kbd "p") #'test-flow-previous-item)

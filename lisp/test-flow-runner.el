@@ -479,6 +479,11 @@ Otherwise, fall back to non-empty stdout, then stderr."
           (process-put p 'test-flow-run-seq seq)
           (when (fboundp 'test-flow--set-process) (test-flow--set-process sess p))
           (when (boundp 'test-flow--process) (setq test-flow--process p))
+          ;; Attach spinner/progress UI if available
+          (when (fboundp 'test-flow-spinner-attach)
+            (condition-case _err
+                (test-flow-spinner-attach sess p)
+              (error nil)))
           (test-flow-runner--log-concurrency-state))))))
 
 ;; -----------------------------------------------------------------------------
@@ -613,64 +618,96 @@ Otherwise, fall back to non-empty stdout, then stderr."
     (let ((test-flow--panel-buffer-name bufname))
       (when (fboundp 'test-flow--render) (test-flow--render)))))
 
+(defun test-flow-runner--sentinel-log (event)
+  "Log EVENT for the sentinel in a uniform way."
+  (when (fboundp 'test-flow--log)
+    (test-flow--log "Sentinel: %s" (string-trim (or event "")))))
+
+(defun test-flow-runner--event-finished-p (event)
+  "Return non-nil when EVENT indicates process finished or exited."
+  (and (stringp event)
+       (string-match-p "\\(finished\\|exited\\)" event)))
+
+(defun test-flow-runner--sentinel-discard-outdated (sess proc stdout-buf stderr-buf)
+  "Handle outdated PROC results for SESS by detaching UI and killing buffers."
+  (when (fboundp 'test-flow--log)
+    (test-flow--log "sentinel: dropping outdated results: seq=%s latest=%s"
+                    (process-get proc 'test-flow-run-seq)
+                    (and sess (fboundp 'test-flow--conf) (test-flow--conf sess 'run-seq 0))))
+  (when (fboundp 'test-flow-spinner-detach)
+    (condition-case _err
+        (test-flow-spinner-detach sess proc)
+      (error nil)))
+  (when (buffer-live-p stdout-buf) (kill-buffer stdout-buf))
+  (when (buffer-live-p stderr-buf) (kill-buffer stderr-buf))
+  (test-flow-runner--finish-run))
+
+(defun test-flow-runner--sentinel-log-parse (root proc stdout stderr raw used summary results)
+  "Log parsing decision and summary."
+  (when (fboundp 'test-flow--log)
+    (test-flow--log "sentinel: root=%s label=%s" root (process-get proc 'test-flow-label))
+    (test-flow--log "sentinel: stdout len=%s stderr len=%s → using=%s"
+                    (if (stringp stdout) (number-to-string (length stdout)) "nil")
+                    (if (stringp stderr) (number-to-string (length stderr)) "nil")
+                    (if (eq raw stdout) "stdout" (if (eq raw stderr) "stderr" "empty")))
+    (test-flow--log "sentinel parsed: results=%d total=%s (parser=%s)"
+                    (length results)
+                    (or (and (listp summary) (alist-get 'total summary)) "?")
+                    (or used (and (fboundp 'test-flow--conf)
+                                  (test-flow--conf (process-get proc 'test-flow-session)
+                                                   'parser
+                                                   (and (boundp 'test-flow-parser) test-flow-parser)))))))
+
+(defun test-flow-runner--sentinel-anomaly-log (event summary raw)
+  "Log a diagnostic snippet when exit is abnormal but F+E==0 and U>0."
+  (let* ((f (or (and (listp summary) (alist-get 'failed summary)) 0))
+         (e (or (and (listp summary) (alist-get 'error summary)) 0))
+         (u (or (and (listp summary) (alist-get 'unexpected summary)) 0)))
+    (when (and (test-flow-runner--event-finished-p event)
+               (string-match-p "abnormally\\|exited" (or event ""))
+               (= (+ f e) 0)
+               (> u 0))
+      (let ((head (and (stringp raw) (substring raw 0 (min 400 (length raw))))))
+        (when (fboundp 'test-flow--log)
+          (test-flow--log "anomaly: exit!=0 but F+E=0 (U=%d). raw head:\n%s" u (or head "")))))))
+
+(defun test-flow-runner--sentinel-handle-finished (proc event)
+  "Handle PROC completion EVENT by parsing and updating UI/state."
+  (test-flow-runner--sentinel-flush)
+  (pcase-let* ((plist (test-flow-runner--sentinel-read-streams proc))
+               (sess (plist-get plist :sess))
+               (root (plist-get plist :root))
+               (stdout (plist-get plist :stdout))
+               (stderr-str (plist-get plist :stderr))
+               (stdout-buf (plist-get plist :stdout-buf))
+               (stderr-buf (plist-get plist :stderr-buf))
+               (raw (test-flow-runner--choose-output-for-parse stdout stderr-str)))
+    (let* ((seq (process-get proc 'test-flow-run-seq))
+           (latest (and sess (fboundp 'test-flow--conf) (test-flow--conf sess 'run-seq 0)))
+           (outdated (and (numberp seq) (numberp latest) (< seq latest))))
+      (if outdated
+          (test-flow-runner--sentinel-discard-outdated sess proc stdout-buf stderr-buf)
+        (pcase-let ((`(,used ,summary ,results) (test-flow-runner--sentinel-parse sess raw)))
+          (test-flow-runner--sentinel-log-parse root proc stdout stderr-str raw used summary results)
+          (test-flow-runner--sentinel-anomaly-log event summary raw)
+          (test-flow-runner--sentinel-store sess used summary results stdout stderr-str)
+          (run-hook-with-args 'test-flow-after-run-hook sess summary results)
+          (when (fboundp 'test-flow-spinner-detach)
+            (condition-case _err
+                (test-flow-spinner-detach sess proc)
+              (error nil)))
+          (when (buffer-live-p stdout-buf) (kill-buffer stdout-buf))
+          (when (buffer-live-p stderr-buf) (kill-buffer stderr-buf))
+          (test-flow-runner--sentinel-render root)
+          (test-flow-runner--finish-run))))))
+
 (defun test-flow-runner--proc-sentinel (proc event)
   "Handle process EVENT (session-aware)."
   (condition-case err
       (progn
-        (when (fboundp 'test-flow--log)
-          (test-flow--log "Sentinel: %s" (string-trim (or event ""))))
-        (when (and (stringp event)
-                   (string-match-p "\\(finished\\|exited\\)" event))
-          (test-flow-runner--sentinel-flush)
-          (pcase-let* ((plist (test-flow-runner--sentinel-read-streams proc))
-                       (sess (plist-get plist :sess))
-                       (root (plist-get plist :root))
-                       (stdout (plist-get plist :stdout))
-                       (stderr-str (plist-get plist :stderr))
-                       (stdout-buf (plist-get plist :stdout-buf))
-                       (stderr-buf (plist-get plist :stderr-buf))
-                       (raw (test-flow-runner--choose-output-for-parse stdout stderr-str)))
-            (when (fboundp 'test-flow--log)
-              (test-flow--log "sentinel: root=%s label=%s" root (process-get proc 'test-flow-label))
-              (test-flow--log "sentinel: stdout len=%s stderr len=%s → using=%s"
-                              (if (stringp stdout) (number-to-string (length stdout)) "nil")
-                              (if (stringp stderr-str) (number-to-string (length stderr-str)) "nil")
-                              (if (eq raw stdout) "stdout" (if (eq raw stderr-str) "stderr" "empty"))))
-            ;; Drop stale (older) runs finishing after a newer one started
-            (let* ((seq (process-get proc 'test-flow-run-seq))
-                   (latest (and sess (fboundp 'test-flow--conf) (test-flow--conf sess 'run-seq 0)))
-                   (outdated (and (numberp seq) (numberp latest) (< seq latest))))
-              (if outdated
-                  (progn
-                    (when (fboundp 'test-flow--log)
-                      (test-flow--log "sentinel: dropping outdated results: seq=%s latest=%s" seq latest))
-                    (when (buffer-live-p stdout-buf) (kill-buffer stdout-buf))
-                    (when (buffer-live-p stderr-buf) (kill-buffer stderr-buf))
-                    (test-flow-runner--finish-run))
-                (pcase-let ((`(,used ,summary ,results) (test-flow-runner--sentinel-parse sess raw)))
-                  (when (fboundp 'test-flow--log)
-                    (test-flow--log "sentinel parsed: results=%d total=%s (parser=%s)"
-                                    (length results)
-                                    (or (and (listp summary) (alist-get 'total summary)) "?")
-                                    (or used (and (fboundp 'test-flow--conf)
-                                                  (test-flow--conf sess 'parser (and (boundp 'test-flow-parser) test-flow-parser))))))
-                  ;; If exit was abnormal but F+E==0 (and U>0), dump raw head to diagnose parser miss.
-                  (let* ((f (or (and (listp summary) (alist-get 'failed summary)) 0))
-                         (e (or (and (listp summary) (alist-get 'error summary)) 0))
-                         (u (or (and (listp summary) (alist-get 'unexpected summary)) 0)))
-                    (when (and (string-match-p "\\(finished\\|exited\\)" (or event ""))
-                               (string-match-p "abnormally\\|exited" (or event ""))
-                               (= (+ f e) 0)
-                               (> u 0))
-                      (let ((head (and (stringp raw) (substring raw 0 (min 400 (length raw))))))
-                        (when (fboundp 'test-flow--log)
-                          (test-flow--log "anomaly: exit!=0 but F+E=0 (U=%d). raw head:\n%s" u (or head ""))))))
-                  (test-flow-runner--sentinel-store sess used summary results stdout stderr-str)
-                  (run-hook-with-args 'test-flow-after-run-hook sess summary results)
-                  (when (buffer-live-p stdout-buf) (kill-buffer stdout-buf))
-                  (when (buffer-live-p stderr-buf) (kill-buffer stderr-buf))
-                  (test-flow-runner--sentinel-render root)
-                  (test-flow-runner--finish-run)))))))
+        (test-flow-runner--sentinel-log event)
+        (when (test-flow-runner--event-finished-p event)
+          (test-flow-runner--sentinel-handle-finished proc event)))
     (error
      (when (fboundp 'test-flow--log)
        (test-flow--log "Sentinel error: %S" err)))))

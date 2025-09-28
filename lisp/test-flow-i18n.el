@@ -58,6 +58,7 @@
     (bound-applied . "Key %s bound to %s.")
     (key-updated . "Key updated: %s -> %s")
     (runner-detect . "Detect test runner")
+    (show-progress . "Show live progress")
     (invalid-key . "Invalid key: %S"))
   "English strings.")
 
@@ -85,6 +86,7 @@
     (bound-applied . "Клавиша %s привязана к %s.")
     (key-updated . "Клавиша обновлена: %s -> %s")
     (runner-detect . "Определить тест-раннер")
+    (show-progress . "Показать прогресс выполнения")
     (invalid-key . "Некорректная клавиша: %S"))
   "Russian strings.")
 

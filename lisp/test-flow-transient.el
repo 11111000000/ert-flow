@@ -172,6 +172,13 @@ If none found, show localized message."
    '(test-flow-toggle-watch)))
 
 ;;;###autoload
+(defun test-flow-cmd-show-progress ()
+  "Show live progress/output for current panel/session (wrapper)."
+  (interactive)
+  (test-flow--call-first-defined
+   '(test-flow-show-progress)))
+
+;;;###autoload
 (defun test-flow-cmd-toggle-headerline ()
   "Toggle Test Flow headerline (wrapper)."
   (interactive)
@@ -213,7 +220,8 @@ If none found, show localized message."
                                 ("p" test-flow-cmd-toggle-panel    :description (lambda () (test-flow-i18n 'panel-toggle)))
                                 ("f" test-flow-cmd-toggle-panel    :description (lambda () (test-flow-i18n 'panel-toggle)))
                                 ("w" test-flow-cmd-toggle-watch    :description (lambda () (test-flow-i18n 'watch-toggle)))
-                                ("h" test-flow-cmd-toggle-headerline :description (lambda () (test-flow-i18n 'headerline-toggle)))] ]))
+                                ("h" test-flow-cmd-toggle-headerline :description (lambda () (test-flow-i18n 'headerline-toggle)))
+                                ("$" test-flow-cmd-show-progress   :description (lambda () (test-flow-i18n 'show-progress)))] ]))
 
 ;; -----------------------------------------------------------------------------
 ;; Global minor mode and keybindings

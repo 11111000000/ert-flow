@@ -369,15 +369,25 @@ Returns plist: (:sess :sum :results :proc) and emits diagnostic logs."
   "Insert Status block and grouped suites using CTX."
   (let* ((sess (plist-get ctx :sess))
          (sum (plist-get ctx :sum))
-         (results (plist-get ctx :results)))
+         (results (plist-get ctx :results))
+         (proc (plist-get ctx :proc)))
     (test-flow--insert-status-block sess sum results)
     (when (fboundp 'test-flow-coverage--insert-panel-block)
       (ignore-errors (test-flow-coverage--insert-panel-block sess)))
-    (dolist (pair (test-flow-render-group-results
-                   (if (fboundp 'test-flow--apply-panel-filters)
-                       (test-flow--apply-panel-filters results)
-                     results)))
-      (test-flow-render-insert-suite (car pair) (cdr pair)))))
+    ;; If a run is active for this session, show spinner + progress % instead of full suite list.
+    (if (and proc (process-live-p proc))
+        (let* ((frame (if (fboundp 'test-flow-spinner-frame) (test-flow-spinner-frame) "⠋"))
+               (pct (if (fboundp 'test-flow-spinner-percent-from-session)
+                        (test-flow-spinner-percent-from-session sess proc)
+                      nil))
+               (pct-str (when (numberp pct) (format "%d%%" (truncate (* 100 pct))))))
+          (insert (format "  %s %s\n\n" frame (or pct-str "Running...")))
+          (insert (propertize "  Press $ to view live output\n\n" 'face 'shadow)))
+      (dolist (pair (test-flow-render-group-results
+                     (if (fboundp 'test-flow--apply-panel-filters)
+                         (test-flow--apply-panel-filters results)
+                       results)))
+        (test-flow-render-insert-suite (car pair) (cdr pair))))))
 
 (defun test-flow-render-render-restore-point ()
   "Restore point after rendering to suite header if requested, else to beginning."
