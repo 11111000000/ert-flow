@@ -27,6 +27,7 @@
 (require 'test-flow-coverage nil 'noerror)
 (require 'test-flow-transient nil 'noerror)
 (require 'test-flow-i18n nil 'noerror)
+(require 'test-flow-spinner nil 'noerror)
 
 (provide 'test-flow-modular)
 ;; Re-export the main feature to allow `(require 'test-flow-modular)` as a drop-in.
