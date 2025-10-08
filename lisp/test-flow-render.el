@@ -17,6 +17,9 @@
 (defvar test-flow--panel-status-folded t)
 (defvar test-flow--panel-status-initialized nil)
 (defvar test-flow--restore-point-suite nil)
+;; Spinner update region (one line) for light updates without full re-render
+(defvar-local test-flow--spinner-beg nil)
+(defvar-local test-flow--spinner-end nil)
 
 ;;;###autoload
 (defgroup test-flow-render nil
@@ -181,7 +184,11 @@
 
 ;;;###autoload
 (defun test-flow-render-suite-icon (agg)
-  "Return colored folder icon string for AGG aggregate status."
+  "Return colored folder icon string for AGG aggregate status (cached)."
+  ;; Lazy-init cache
+  (defvar test-flow-render--suite-icon-cache nil)
+  (unless (hash-table-p test-flow-render--suite-icon-cache)
+    (setq test-flow-render--suite-icon-cache (make-hash-table :test 'equal)))
   (let* ((color (pcase agg
                   ('all-pass "SpringGreen3")
                   ('all-fail "Red3")
@@ -189,21 +196,26 @@
                   ('skipped-only "gray60")
                   (_ "gray60")))
          (face `(:foreground ,color))
-         (icon
-          (cond
-           ((and (featurep 'all-the-icons)
-                 (fboundp 'all-the-icons-material)
-                 (display-graphic-p)
-                 (find-font (font-spec :family "Material Icons")))
-            (all-the-icons-material "folder" :v-adjust 0.0 :height 1.0))
-           ((char-displayable-p ?📁) "📁")
-           (t "[+]"))))
-    (cond
-     ((not (stringp icon)) icon)
-     (t
-      (let* ((icon-face (get-text-property 0 'face icon))
-             (combined (if icon-face (list icon-face face) face)))
-        (propertize icon 'face combined))))))
+         (gfx (and (featurep 'all-the-icons) (display-graphic-p)))
+         (cache-key (list agg gfx)))
+    (or (gethash cache-key test-flow-render--suite-icon-cache)
+        (let* ((icon
+                (cond
+                 ((and gfx
+                       (fboundp 'all-the-icons-material)
+                       (find-font (font-spec :family "Material Icons")))
+                  (all-the-icons-material "folder" :v-adjust 0.0 :height 1.0))
+                 ((char-displayable-p ?📁) "📁")
+                 (t "[+]")))
+               (out
+                (cond
+                 ((not (stringp icon)) icon)
+                 (t
+                  (let* ((icon-face (get-text-property 0 'face icon))
+                         (combined (if icon-face (list icon-face face) face)))
+                    (propertize icon 'face combined))))))
+          (puthash cache-key out test-flow-render--suite-icon-cache)
+          out))))
 
 ;;;###autoload
 (defun test-flow-render-insert-suite (suite results)
@@ -246,15 +258,7 @@
        'help-echo "Toggle group (mouse-1, TAB)"
        'keymap (and (boundp 'test-flow--suite-button-map) test-flow--suite-button-map)
        'test-flow--suite suite
-       'action (lambda (_btn)
-                 (when (fboundp 'test-flow--ensure-fold-table)
-                   (test-flow--ensure-fold-table))
-                 (let ((cur (gethash suite test-flow--folded-suites)))
-                   (puthash suite (not cur) test-flow--folded-suites))
-                 (let ((test-flow--panel-buffer-name (buffer-name)))
-                   (setq-local test-flow--restore-point-suite suite)
-                   (when (fboundp 'test-flow--render)
-                     (test-flow--render)))))
+       'action #'test-flow-render--suite-button-action)
       (unless folded
         (dolist (r results)
           (test-flow-render-insert-test-line r))))))
@@ -381,8 +385,19 @@ Returns plist: (:sess :sum :results :proc) and emits diagnostic logs."
                         (test-flow-spinner-percent-from-session sess proc)
                       nil))
                (pct-str (when (numberp pct) (format "%d%%" (truncate (* 100 pct))))))
-          (insert (format "  %s %s\n\n" frame (or pct-str "Running...")))
+          ;; Prepare a single-line spinner region that can be updated in-place by timer
+          (let ((line (format "  %s %s\n" frame (or pct-str "Running..."))))
+            (put-text-property 0 (length line) 'test-flow--spinner-region t line)
+            ;; Begin marker must not advance on insert; keep it anchored at line start.
+            (setq-local test-flow--spinner-beg (copy-marker (point)))
+            (insert line)
+            ;; End marker should advance to stay after inserted spinner line.
+            (setq-local test-flow--spinner-end (copy-marker (point) t)))
+          (insert "\n")
           (insert (propertize "  Press $ to view live output\n\n" 'face 'shadow)))
+      ;; Not running: clear spinner markers and show grouped suites
+      (setq-local test-flow--spinner-beg nil)
+      (setq-local test-flow--spinner-end nil)
       (dolist (pair (test-flow-render-group-results
                      (if (fboundp 'test-flow--apply-panel-filters)
                          (test-flow--apply-panel-filters results)
@@ -439,6 +454,20 @@ Returns plist: (:sess :sum :results :proc) and emits diagnostic logs."
 
 (unless (fboundp 'test-flow--status-line-icon)
   (defalias 'test-flow--status-line-icon 'test-flow-render-status-line-icon))
+
+(defun test-flow-render--suite-button-action (btn)
+  "Button action to toggle the suite group stored on BTN."
+  (let ((suite (button-get btn 'test-flow--suite)))
+    (when suite
+      (when (fboundp 'test-flow--ensure-fold-table)
+        (test-flow--ensure-fold-table))
+      (let ((cur (and (boundp 'test-flow--folded-suites)
+                      (gethash suite test-flow--folded-suites))))
+        (puthash suite (not cur) test-flow--folded-suites))
+      (let ((test-flow--panel-buffer-name (buffer-name)))
+        (setq-local test-flow--restore-point-suite suite)
+        (when (fboundp 'test-flow--render)
+          (test-flow--render))))))
 
 (provide 'test-flow-render)
 ;;; test-flow-render.el ends here

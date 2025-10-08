@@ -42,6 +42,10 @@
 (defvar-local test-flow--spinner-index 0)
 (defvar-local test-flow--spinner-last-time 0.0)
 (defvar-local test-flow--spinner-degraded nil)
+;; Link to session/proc and state for light UI updates in panel
+(defvar-local test-flow--spinner-sess nil)
+(defvar-local test-flow--spinner-proc nil)
+(defvar-local test-flow--spinner-rendered nil)
 
 (defun test-flow-spinner--ensure-state ()
   "Ensure spinner buffer-local state is initialized."
@@ -85,6 +89,30 @@ Return nil if unknown, or a float 0..1."
 
 ;;; Spinner lifecycle: attach/detach called by the runner when process starts/stops
 
+(defun test-flow-spinner--inline-refresh (buf)
+  "Try to update spinner region in BUF without full re-render. Return t on success."
+  (when (buffer-live-p buf)
+    (with-current-buffer buf
+      (let ((sess (and (boundp 'test-flow--spinner-sess) test-flow--spinner-sess))
+            (proc (and (boundp 'test-flow--spinner-proc) test-flow--spinner-proc)))
+        (when (and sess proc
+                   (boundp 'test-flow--spinner-beg)
+                   (boundp 'test-flow--spinner-end)
+                   (markerp test-flow--spinner-beg)
+                   (markerp test-flow--spinner-end)
+                   (get-buffer-window buf 'visible))
+          (let* ((frame (test-flow-spinner-frame))
+                 (pct (test-flow-spinner-percent-from-session sess proc))
+                 (pct-str (and (numberp pct) (format "%d%%" (truncate (* 100 pct)))))
+                 (str (format "  %s %s\n" frame (or pct-str "Running..."))))
+            (let ((inhibit-read-only t))
+              (save-excursion
+                (goto-char test-flow--spinner-beg)
+                (delete-region test-flow--spinner-beg test-flow--spinner-end)
+                (insert str)
+                (set-marker test-flow--spinner-end (point))))
+            t))))))
+
 (defun test-flow-spinner--start-timer-for-buffer (buf)
   "Start or restart spinner timer attached to panel buffer BUF."
   (when (buffer-live-p buf)
@@ -115,10 +143,9 @@ Return nil if unknown, or a float 0..1."
                                        (setq test-flow--spinner-timer nil))
                                      (unless test-flow--spinner-degraded
                                        (setq test-flow--spinner-index (1+ (or test-flow--spinner-index 0))))
-                                     ;; trigger panel render so spinner updates visually
-                                     (when (fboundp 'test-flow--render)
-                                       (let ((test-flow--panel-buffer-name (buffer-name)))
-                                         (test-flow--render))))))))))))))
+                                     ;; Light inline update of the spinner line; avoid full re-render
+                                     (ignore-errors
+                                       (test-flow-spinner--inline-refresh bb2)))))))))))))
 
 (defun test-flow-spinner--stop-timer-for-buffer (buf)
   "Stop spinner timer for panel buffer BUF and reset state."
@@ -142,8 +169,17 @@ Start spinner timer in the session panel buffer so UI will show animation."
                          (test-flow--session-panel-name root)))
            (buf (get-buffer-create bufname)))
       (with-current-buffer buf
-        (test-flow-spinner--ensure-state))
-      (test-flow-spinner--start-timer-for-buffer buf))))
+        (test-flow-spinner--ensure-state)
+        (setq-local test-flow--spinner-sess sess)
+        (setq-local test-flow--spinner-proc proc)
+        (setq-local test-flow--spinner-rendered nil))
+      (test-flow-spinner--start-timer-for-buffer buf)
+      ;; One initial render to create spinner region; subsequent updates are inline
+      (with-current-buffer buf
+        (when (fboundp 'test-flow--render)
+          (let ((test-flow--panel-buffer-name (buffer-name)))
+            (test-flow--render))
+          (setq-local test-flow--spinner-rendered t))))))
 
 (defun test-flow-spinner-detach (sess proc)
   "Detach spinner from session SESS / process PROC and stop timer."
@@ -154,8 +190,14 @@ Start spinner timer in the session panel buffer so UI will show animation."
            (buf (get-buffer bufname)))
       (when (buffer-live-p buf)
         (test-flow-spinner--stop-timer-for-buffer buf)
-        ;; force one final render to show completed state
         (with-current-buffer buf
+          ;; clear links/markers
+          (setq test-flow--spinner-sess nil)
+          (setq test-flow--spinner-proc nil)
+          (setq test-flow--spinner-rendered nil)
+          (setq test-flow--spinner-beg nil)
+          (setq test-flow--spinner-end nil)
+          ;; force one final render to show completed state
           (when (fboundp 'test-flow--render)
             (let ((test-flow--panel-buffer-name bufname))
               (test-flow--render))))))))
