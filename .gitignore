@@ -24,5 +24,6 @@
 # Logs
 *.log
 ...*
+TODO.org
 
 .context
