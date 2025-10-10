@@ -41,14 +41,19 @@
 
 (defface test-flow-headerline
   '((t :inherit default
-       :background unspecified
-       :box (:line-width 1 :color "gray60")))
-  "Default header-line face for test-flow panel buffers."
+       :background unspecified))
+  "Default header-line face for test-flow panel buffers.
+Border color is taken from `test-flow-headerline-border' face."
   :group 'test-flow-view-controls)
 
 (defface test-flow-modeline
   '((t :inherit default))
   "Mode-line face for test-flow panel buffers (inherits from `default`)."
+  :group 'test-flow-view-controls)
+
+(defface test-flow-headerline-border
+  '((t :inherit shadow))
+  "Border face for Test Flow header-line box (its foreground is used)."
   :group 'test-flow-view-controls)
 
 (defvar-local test-flow--headerline-face-cookie nil
@@ -74,7 +79,10 @@
             (face-remap-remove-relative test-flow--headerline-face-cookie))
           (setq test-flow--headerline-face-cookie nil))
         (let* ((def-bg (face-background 'default nil t))
-               (box-col (or (face-foreground 'shadow nil t) "gray60"))
+               (box-col (or (face-foreground 'test-flow-headerline-border nil t)
+                            (face-foreground 'shadow nil t)
+                            (face-foreground 'mode-line nil t)
+                            (face-foreground 'default nil t)))
                (spec `(:inherit default
                                 :foreground unspecified
                                 :background ,def-bg
