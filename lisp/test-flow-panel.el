@@ -354,9 +354,11 @@ selected runner:
              (cand2 (expand-file-name "t/run-tests.el" root)))
         (cond
          ((file-exists-p cand1)
-          (test-flow--set-conf sess 'external-command (list "emacs" "-Q" "--batch" "-l" cand1)))
+          (test-flow--set-conf sess 'external-command (list "emacs" "-Q" "--batch" "-l" cand1))
+          (test-flow--set-conf sess 'runner 'external-command))
          ((file-exists-p cand2)
-          (test-flow--set-conf sess 'external-command (list "emacs" "-Q" "--batch" "-l" cand2))))))
+          (test-flow--set-conf sess 'external-command (list "emacs" "-Q" "--batch" "-l" cand2))
+          (test-flow--set-conf sess 'runner 'external-command)))))
     (with-current-buffer buf
       (setq default-directory (file-name-as-directory root))
       (test-flow-panel-mode))
@@ -540,11 +542,13 @@ selected runner:
     (define-key map (kbd "P") #'test-flow-panel-filter-pass)
     (define-key map (kbd "F") #'test-flow-panel-filter-fail)
     (define-key map (kbd "E") #'test-flow-panel-filter-error)
-    (define-key map (kbd "S") #'test-flow-panel-filter-skip)
+    (define-key map (kbd "s") #'test-flow-panel-filter-skip)
     (define-key map (kbd "A") #'test-flow-panel-filter-all)
     (define-key map (kbd "/") #'test-flow-panel-set-name-filter)
     (define-key map (kbd "T") #'test-flow-panel-set-tags-filter)
-    (define-key map (kbd "C") #'test-flow-panel-filter-clear)))
+    (define-key map (kbd "C") #'test-flow-panel-filter-clear)
+    ;; Status split toggle
+    (define-key map (kbd "S") #'test-flow-status-toggle)))
 
 ;; Minimal details view
 (defun test-flow--details-populate-simple (buf name details)
@@ -661,9 +665,10 @@ When disabled, closes side-window панели текущего проекта (
 
 ;;;; Status split window
 
-(defcustom test-flow-status-split-side 'bottom
-  "Side where the Status split is displayed."
-  :type '(choice (const bottom) (const top) (const left) (const right))
+(defcustom test-flow-status-split-side 'same
+  "Side where the Status split is displayed.
+Use 'same to match the panel side."
+  :type '(choice (const same) (const bottom) (const top) (const left) (const right))
   :group 'test-flow-panel)
 
 (defcustom test-flow-status-split-height 0.25
@@ -676,11 +681,12 @@ When disabled, closes side-window панели текущего проекта (
   (format "*test-flow: status %s*" (file-name-nondirectory (directory-file-name root))))
 
 (defvar test-flow-status-mode-map
-  (let ((map (make-sparse-keymap)))
+  (let ((map (make-sparse-keymap())))
     (set-keymap-parent map special-mode-map)
     (define-key map (kbd "q") #'test-flow-status-close)
+    (define-key map (kbd "S") #'test-flow-status-close)
     map)
-  "Keymap for `test-flow-status-mode' (q closes the split).")
+  "Keymap for `test-flow-status-mode' (q/S closes the split).")
 
 (define-derived-mode test-flow-status-mode special-mode "test-flow_status"
   "Major mode for the Test Flow status split buffer."
@@ -693,6 +699,11 @@ When disabled, closes side-window панели текущего проекта (
          (bufname (test-flow--status-buffer-name r))
          (buf (get-buffer bufname)))
     (and buf (get-buffer-window buf 'visible))))
+
+;;;###autoload
+(defun test-flow-view-controls--status-state ()
+  "Return 'open or 'closed based on visibility of the Status split for current project."
+  (if (test-flow-status-visible-p) 'open 'closed))
 
 (defun test-flow-status--render-into (buf sess)
   "Render status into BUF for SESS (expanded)."
@@ -719,9 +730,21 @@ When disabled, closes side-window панели текущего проекта (
          (bufname (test-flow--status-buffer-name (or root (test-flow--project-root))))
          (buf (get-buffer-create bufname)))
     (test-flow-status--render-into buf sess)
-    (display-buffer-in-side-window
-     buf `((side . ,test-flow-status-split-side)
-           (window-height . ,test-flow-status-split-height)))
+    (let* ((panel-side (or (and sess (test-flow--conf sess 'panel-side (if (boundp 'test-flow-panel-side) test-flow-panel-side 'right)))
+                           (if (boundp 'test-flow-panel-side) test-flow-panel-side 'right)))
+           (side (if (eq test-flow-status-split-side 'same) panel-side test-flow-status-split-side))
+           ;; Для right/left используем window-width (в колонках),
+           ;; для top/bottom — window-height (доля).
+           (panel-w (or (and sess (test-flow--conf sess 'panel-width (if (boundp 'test-flow-panel-width) test-flow-panel-width 42)))
+                        42))
+           (params `((side . ,side)
+                     ;; Выделяем отдельный слот, чтобы не заменять окно панели.
+                     (slot . 1))))
+      (setq params
+            (if (memq side '(left right))
+                (append params `((window-width . ,panel-w)))
+              (append params `((window-height . ,test-flow-status-split-height)))))
+      (display-buffer-in-side-window buf params))
     (when (fboundp 'test-flow-headerline-refresh)
       (test-flow-headerline-refresh))
     (force-mode-line-update t)))

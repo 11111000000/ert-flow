@@ -26,15 +26,44 @@
   :type 'boolean
   :group 'test-flow-controls-icons)
 
-(defcustom test-flow-controls-icon-height 0.9
+(defcustom test-flow-controls-icon-height 1.0
   "Uniform height for control icons."
   :type 'number
   :group 'test-flow-controls-icons)
 
-(defcustom test-flow-controls-icon-raise 0.11
+(defcustom test-flow-controls-icon-raise 0.0
   "Vertical raise for control icons (applied via `display' property)."
   :type 'number
   :group 'test-flow-controls-icons)
+
+(defcustom test-flow-controls-icon-v-adjust 0.02
+  "Baseline adjustment passed to all-the-icons (:v-adjust)."
+  :type 'number
+  :group 'test-flow-controls-icons)
+
+(defcustom test-flow-controls-icon-v-adjust-map nil
+  "Per-control delta for :v-adjust to fine-tune vertical alignment.
+
+Each entry is either:
+- (KEY . DELTA) where DELTA is a number
+- (KEY . ((on . DELTA) (off . DELTA))) for toggles
+
+The effective value is: test-flow-controls-icon-v-adjust + DELTA."
+  :type '(alist :key-type symbol
+                :value-type (choice number
+                                    (alist :key-type (choice (const on) (const off))
+                                           :value-type number)))
+  :group 'test-flow-controls-icons)
+
+(defun test-flow-controls-icons--effective-v-adjust (key state)
+  "Return effective :v-adjust for control KEY and optional STATE."
+  (let* ((base test-flow-controls-icon-v-adjust)
+         (v (alist-get key test-flow-controls-icon-v-adjust-map))
+         (delta (cond
+                 ((numberp v) v)
+                 ((and (listp v) (memq state '(on off))) (or (alist-get state v) 0.0))
+                 (t 0.0))))
+    (+ base delta)))
 
 (defface test-flow-controls-icon-on
   '((t :inherit success))
@@ -48,19 +77,19 @@
 
 ;; Default icon map for controls (single or stateful (on/off)).
 (defcustom test-flow-controls-icon-map
-  '((stats       . (material . "bar_chart"))
+  '((stats       . (material . "assessment"))
     (run         . (material . "play_arrow"))
     (run-failed  . (material . "replay"))
     (watch       . ((on  . (material . "visibility"))
                     (off . (material . "visibility_off"))))
-    (copy        . (faicon   . "clipboard"))
+    (copy        . (material . "content_copy"))
     (clear       . (material . "delete"))
     (detect      . (material . "search"))
-    (goto        . (octicon  . "arrow-right"))
-    (sessions    . (material . "view_list"))
+    (goto        . (material  . "open_in_new"))
+    (sessions    . (material . "format_list_bulleted"))
     (dashboard   . (material . "dashboard"))
-    (logging     . ((on  . (faicon . "bug"))
-                    (off . (faicon . "bug")))))
+    (logging     . ((on  . (material . "bug_report"))
+                    (off . (material . "bug_report")))))
   "Mapping of control keys to all-the-icons specs.
 Either a cons (PROVIDER . NAME), or an alist of ((on . (PROVIDER . NAME)) (off . ...))."
   :type '(alist :key-type symbol
@@ -77,8 +106,8 @@ Either a cons (PROVIDER . NAME), or an alist of ((on . (PROVIDER . NAME)) (off .
     (run-failed . (:foreground "DarkOrange2"))
     (copy       . (:foreground "SteelBlue3"))
     (clear      . (:foreground "tomato"))
-    (detect     . (:foreground "MediumPurple3"))
-    (goto       . (:foreground "Gold3"))
+    (detect     . (:foreground "MediumPurple"))
+    (goto       . (:foreground "Orange"))
     (sessions   . (:foreground "gray70"))
     (dashboard  . (:foreground "gray70")))
   "Optional face overrides for non-toggle icons (symbol or plist)."
@@ -145,7 +174,8 @@ Either a cons (PROVIDER . NAME), or an alist of ((on . (PROVIDER . NAME)) (off .
              (override override)
              (t base-face)))
            (raise test-flow-controls-icon-raise)
-           (cache-key (list key state test-flow-controls-icon-height raise final-face)))
+           (vadj (test-flow-controls-icons--effective-v-adjust key state))
+           (cache-key (list key state test-flow-controls-icon-height raise final-face vadj)))
       (or (gethash cache-key test-flow-controls-icons--cache)
           (when (and provider name)
             (let* ((fn (test-flow-controls-icons--provider-fn provider))
@@ -156,7 +186,7 @@ Either a cons (PROVIDER . NAME), or an alist of ((on . (PROVIDER . NAME)) (off .
                                  :face (or (and (symbolp final-face) final-face)
                                            (and (listp final-face) final-face))
                                  :height test-flow-controls-icon-height
-                                 :v-adjust 0.0)))))
+                                 :v-adjust vadj)))))
               (when (and (stringp icon) (not (string-empty-p icon)))
                 (let ((s (propertize icon 'display (list 'raise raise))))
                   (puthash cache-key s test-flow-controls-icons--cache)
@@ -185,7 +215,9 @@ Either a cons (PROVIDER . NAME), or an alist of ((on . (PROVIDER . NAME)) (off .
                  test-flow-controls-icon-map
                  test-flow-controls-icon-face-map
                  test-flow-controls-icon-height
-                 test-flow-controls-icon-raise))
+                 test-flow-controls-icon-raise
+                 test-flow-controls-icon-v-adjust
+                 test-flow-controls-icon-v-adjust-map))
     (add-variable-watcher
      sym
      (lambda (&rest _) (test-flow-controls-icons--refresh-ui)))))

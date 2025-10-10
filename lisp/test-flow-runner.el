@@ -166,17 +166,13 @@ If INTERACTIVEP is non-nil, make it an interactive command."
       (message "[test-flow] concurrency: (no state)"))))
 
 (defun test-flow-runner--impl-detect-runner ()
-  "Detect a suitable external command for running tests and set it per-session.
+  "Detect available runners for this project and set session runner.
 
-Heuristics (in order):
-- tests/run-tests.el or test/run-tests.el → emacs -Q --batch -l <path>
-- flake.nix:
-  - apps.tests → nix run .#tests
-  - checks.<name> (ert/tests) → nix build .#checks.<system>.<name>
-  - otherwise → nix flake check (fallback)
-- Cask present → cask exec ert-runner
+Always offers a choice between:
+- in-Emacs ERT (run tests inside this Emacs)
+- External commands detected in project (tests/run-tests.el, flake.nix, Cask, etc.).
 
-If multiple candidates are available, prompt to choose."
+The selected option is stored in the session config (in memory)."
   (interactive)
   (let* ((root (if (fboundp 'test-flow--project-root)
                    (test-flow--project-root)
@@ -186,17 +182,17 @@ If multiple candidates are available, prompt to choose."
          (json2 (expand-file-name "test/run-tests.el" root))
          (flake (expand-file-name "flake.nix" root))
          (cask  (expand-file-name "Cask" root))
+         (ext-cands nil)
          (cands nil))
-    ;; Direct entrypoints
+    ;; External entrypoints
     (when (file-exists-p json)
       (push (cons "emacs -Q --batch -l tests/run-tests.el"
                   (list "emacs" "-Q" "--batch" "-l" json))
-            cands))
+            ext-cands))
     (when (and (not (file-exists-p json)) (file-exists-p json2))
       (push (cons "emacs -Q --batch -l test/run-tests.el"
                   (list "emacs" "-Q" "--batch" "-l" json2))
-            cands))
-    ;; Flake-based entrypoints
+            ext-cands))
     (when (file-exists-p flake)
       (let* ((s (with-temp-buffer
                   (insert-file-contents-literally flake)
@@ -208,40 +204,42 @@ If multiple candidates are available, prompt to choose."
              (has-checks-ert (string-match-p "checks\\(?:.\\|\n\\)*?ert[ \t]*=" s))
              (has-checks-tests (string-match-p "checks\\(?:.\\|\n\\)*?tests[ \t]*=" s)))
         (when has-apps-tests
-          (push (cons "nix run .#tests" (list "nix" "run" ".#tests")) cands))
+          (push (cons "nix run .#tests" (list "nix" "run" ".#tests")) ext-cands))
         (when has-checks-ert
           (push (cons (format "nix build -L --no-link .#checks.%s.ert" sys)
                       (list "nix" "build" "-L" "--print-build-logs" "--no-link" "--rebuild" (format ".#checks.%s.ert" sys)))
-                cands))
+                ext-cands))
         (when has-checks-tests
           (push (cons (format "nix build -L --no-link .#checks.%s.tests" sys)
                       (list "nix" "build" "-L" "--print-build-logs" "--no-link" "--rebuild" (format ".#checks.%s.tests" sys)))
-                cands))
-        ;; Fallback (heavy) if nothing specific matched
+                ext-cands))
         (when (and (not has-apps-tests) (not has-checks-ert) (not has-checks-tests))
-          (push (cons "nix flake check" (list "nix" "flake" "check")) cands))))
-    ;; Cask runner
+          (push (cons "nix flake check" (list "nix" "flake" "check")) ext-cands))))
     (when (file-exists-p cask)
       (push (cons "cask exec ert-runner"
                   (list "cask" "exec" "ert-runner"))
-            cands))
-    (cond
-     ((null cands)
+            ext-cands))
+    ;; Compose final choice list: always include in-Emacs option.
+    (setq cands (append (list (cons "Run in this Emacs (ERT)" :in-emacs))
+                        (nreverse ext-cands)))
+    ;; If nothing at all (shouldn't happen due to in-emacs), bail out.
+    (when (null cands)
       (user-error "test-flow: no known test entrypoint found under %s" root))
-     ((= (length cands) 1)
-      (when (fboundp 'test-flow--set-conf)
-        (test-flow--set-conf sess 'external-command (cdar cands)))
-      (when (boundp 'test-flow-external-command)
-        (setq test-flow-external-command (cdar cands)))
-      (message "test-flow: session external command set to %S" (cdar cands)))
-     (t
-      (let* ((choice (completing-read "Choose runner: " (mapcar #'car cands) nil t))
-             (cmd (cdr (assoc choice cands))))
-        (when (fboundp 'test-flow--set-conf)
-          (test-flow--set-conf sess 'external-command cmd))
-        (when (boundp 'test-flow-external-command)
-          (setq test-flow-external-command cmd))
-        (message "test-flow: session external command set to %S" cmd))))))
+    ;; Always prompt to select runner.
+    (let* ((choice (completing-read "Choose runner: " (mapcar #'car cands) nil t))
+           (payload (cdr (assoc choice cands))))
+      (if (eq payload :in-emacs)
+          (progn
+            (when (fboundp 'test-flow--set-conf)
+              (test-flow--set-conf sess 'runner 'in-emacs-ert))
+            (message "test-flow: session runner set to in-emacs (ERT)"))
+        (let ((cmd payload))
+          (when (fboundp 'test-flow--set-conf)
+            (test-flow--set-conf sess 'external-command cmd)
+            (test-flow--set-conf sess 'runner 'external-command))
+          (when (boundp 'test-flow-external-command)
+            (setq test-flow-external-command cmd))
+          (message "test-flow: session external command set to %S" cmd))))))
 
 ;; Ensure public commands resolve to modular implementations (override wrappers).
 (defalias 'test-flow-run             'test-flow-runner--impl-run)

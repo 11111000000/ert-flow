@@ -185,6 +185,13 @@ If none found, show localized message."
   (test-flow--call-first-defined
    '(test-flow-headerline-toggle)))
 
+;;;###autoload
+(defun test-flow-cmd-toggle-status ()
+  "Toggle Status split (wrapper)."
+  (interactive)
+  (test-flow--call-first-defined
+   '(test-flow-status-toggle)))
+
 ;; -----------------------------------------------------------------------------
 ;; Transient prefix
 ;; -----------------------------------------------------------------------------
@@ -220,6 +227,7 @@ If none found, show localized message."
                                 ("p" test-flow-cmd-toggle-panel    :description (lambda () (test-flow-i18n 'panel-toggle)))
                                 ("f" test-flow-cmd-toggle-panel    :description (lambda () (test-flow-i18n 'panel-toggle)))
                                 ("w" test-flow-cmd-toggle-watch    :description (lambda () (test-flow-i18n 'watch-toggle)))
+                                ("S" test-flow-cmd-toggle-status   :description (lambda () (test-flow-i18n 'status-toggle)))
                                 ("h" test-flow-cmd-toggle-headerline :description (lambda () (test-flow-i18n 'headerline-toggle)))
                                 ("$" test-flow-cmd-show-progress   :description (lambda () (test-flow-i18n 'show-progress)))] ]))
 

@@ -60,7 +60,10 @@ Border color is taken from `test-flow-headerline-border' face."
   "Face-remap cookie for remapping header-line face in test-flow panel buffer.")
 
 (defvar-local test-flow--modeline-face-cookie nil
-  "Face-remap cookie for remapping mode-line face in test-flow panel buffer.")
+  "Face-remap cookie for remapping active mode-line face in test-flow panel buffer.")
+
+(defvar-local test-flow--modeline-inactive-face-cookie nil
+  "Face-remap cookie for remapping inactive mode-line face in test-flow panel buffer.")
 
 (defun test-flow-view-controls--panel-buffers ()
   "Return list of test-flow panel buffers."
@@ -89,13 +92,20 @@ Border color is taken from `test-flow-headerline-border' face."
                                 :box (:line-width 1 :color ,box-col))))
           (setq test-flow--headerline-face-cookie
                 (face-remap-add-relative 'header-line spec)))
-        ;; Mode-line remap
+        ;; Mode-line remap (active and inactive)
         (when test-flow--modeline-face-cookie
           (ignore-errors
             (face-remap-remove-relative test-flow--modeline-face-cookie))
           (setq test-flow--modeline-face-cookie nil))
+        (when test-flow--modeline-inactive-face-cookie
+          (ignore-errors
+            (face-remap-remove-relative test-flow--modeline-inactive-face-cookie))
+          (setq test-flow--modeline-inactive-face-cookie nil))
         (setq test-flow--modeline-face-cookie
-              (face-remap-add-relative 'mode-line 'test-flow-modeline))
+              (face-remap-add-relative 'mode-line `(:inherit test-flow-modeline
+                                                             :box (:line-width 1))))
+        (setq test-flow--modeline-inactive-face-cookie
+              (face-remap-add-relative 'mode-line-inactive 'test-flow-modeline))
         (force-mode-line-update t)))))
 
 ;; Apply face now if buffers already exist.
@@ -169,7 +179,7 @@ Border color is taken from `test-flow-headerline-border' face."
      :label-fn ,(lambda (style _)
                   (pcase style
                     ((or 'icons 'auto) " [▶]")
-                    (_ " [Run]"))))
+                    (_ " [▶]"))))
     (run-failed
      :type action
      :icon-key run-failed
@@ -180,7 +190,7 @@ Border color is taken from `test-flow-headerline-border' face."
      :label-fn ,(lambda (style _)
                   (pcase style
                     ((or 'icons 'auto) " [↻]")
-                    (_ " [Run failed]"))))
+                    (_ " [↻]"))))
     (watch
      :type toggle
      :icon-key watch
@@ -191,8 +201,8 @@ Border color is taken from `test-flow-headerline-border' face."
      :state-fn ,#'test-flow-view-controls--watch-state
      :label-fn ,(lambda (style state)
                   (pcase style
-                    ((or 'icons 'auto) " [W]")
-                    (_ (format " [Watch: %s]" (if (eq state 'on) "On" "Off"))))))
+                    ((or 'icons 'auto) " [👁]")
+                    (_ " [👁]"))))
     (copy
      :type action
      :icon-key copy
@@ -200,7 +210,7 @@ Border color is taken from `test-flow-headerline-border' face."
      :help "Copy failures (c)"
      :enabled-p ,(lambda () t)
      :visible-p ,(lambda () t)
-     :label-fn ,(lambda (style _) (if (eq style 'text) " [Copy]" " [📋]")))
+     :label-fn ,(lambda (style _) (if (eq style 'text) " [📋]" " [📋]")))
     (clear
      :type action
      :icon-key clear
@@ -208,7 +218,7 @@ Border color is taken from `test-flow-headerline-border' face."
      :help "Clear panel (x)"
      :enabled-p ,(lambda () t)
      :visible-p ,(lambda () t)
-     :label-fn ,(lambda (style _) (if (eq style 'text) " [Clear]" " [C]")))
+     :label-fn ,(lambda (style _) (if (eq style 'text) " [🗑]" " [🗑]")))
     (detect
      :type action
      :icon-key detect
@@ -216,7 +226,7 @@ Border color is taken from `test-flow-headerline-border' face."
      :help "Detect runner (d)"
      :enabled-p ,(lambda () t)
      :visible-p ,(lambda () t)
-     :label-fn ,(lambda (style _) (if (eq style 'text) " [Detect]" " [🔎]")))
+     :label-fn ,(lambda (style _) (if (eq style 'text) " [🔎]" " [🔎]")))
     (goto
      :type action
      :icon-key goto
@@ -224,7 +234,7 @@ Border color is taken from `test-flow-headerline-border' face."
      :help "Goto test definition (o)"
      :enabled-p ,(lambda () t)
      :visible-p ,(lambda () t)
-     :label-fn ,(lambda (style _) (if (eq style 'text) " [Goto]" " [↗]")))
+     :label-fn ,(lambda (style _) (if (eq style 'text) " [↗]" " [↗]")))
     (sessions
      :type action
      :icon-key sessions
@@ -232,7 +242,7 @@ Border color is taken from `test-flow-headerline-border' face."
      :help "List sessions"
      :enabled-p ,(lambda () (fboundp 'test-flow-list-sessions))
      :visible-p ,(lambda () t)
-     :label-fn ,(lambda (style _) (if (eq style 'text) " [Sessions]" " [S]")))
+     :label-fn ,(lambda (style _) (if (eq style 'text) " [🗂]" " [🗂]")))
     (dashboard
      :type action
      :icon-key dashboard
@@ -240,7 +250,7 @@ Border color is taken from `test-flow-headerline-border' face."
      :help "Dashboard"
      :enabled-p ,(lambda () (fboundp 'test-flow-dashboard))
      :visible-p ,(lambda () t)
-     :label-fn ,(lambda (style _) (if (eq style 'text) " [Dashboard]" " [D]")))
+     :label-fn ,(lambda (style _) (if (eq style 'text) " [📊]" " [📊]")))
     (logging
      :type toggle
      :icon-key logging
@@ -251,8 +261,8 @@ Border color is taken from `test-flow-headerline-border' face."
      :state-fn ,(lambda () (if (and (boundp 'test-flow-log-enabled) test-flow-log-enabled) 'on 'off))
      :label-fn ,(lambda (style state)
                   (pcase style
-                    ((or 'icons 'auto) " [L]")
-                    (_ (format " [Log: %s]" (if (eq state 'on) "On" "Off"))))))
+                    ((or 'icons 'auto) " [🐞]")
+                    (_ " [🐞]"))))
     )
   "Registry of test-flow header-line controls."
   :type '(alist :key-type symbol :value-type plist)

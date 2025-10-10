@@ -59,6 +59,7 @@
     (key-updated . "Key updated: %s -> %s")
     (runner-detect . "Detect test runner")
     (show-progress . "Show live progress")
+    (status-toggle . "Toggle status split")
     (invalid-key . "Invalid key: %S"))
   "English strings.")
 
@@ -87,6 +88,7 @@
     (key-updated . "Клавиша обновлена: %s -> %s")
     (runner-detect . "Определить тест-раннер")
     (show-progress . "Показать прогресс выполнения")
+    (status-toggle . "Переключить окно статуса")
     (invalid-key . "Некорректная клавиша: %S"))
   "Russian strings.")
 

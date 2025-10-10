@@ -280,11 +280,8 @@
                                            :face '(:foreground "MediumPurple3")))
         ('project  (all-the-icons-material "folder_open" :height 1.0 :v-adjust 0.02
                                            :face '(:foreground "SteelBlue3")))
-        ('runner   (if (fboundp 'all-the-icons-octicon)
-                       (all-the-icons-octicon "rocket" :height 1.0 :v-adjust 0.02
-                                              :face '(:foreground "Gold3"))
-                     (all-the-icons-material "rocket_launch" :height 1.0 :v-adjust 0.02
-                                             :face '(:foreground "Gold3"))))
+        ('runner   (all-the-icons-material "launch" :height 1.0 :v-adjust 0.02
+                                           :face '(:foreground "Gold3")))
         ('mode     (all-the-icons-material "sync" :height 1.0 :v-adjust 0.02
                                            :face '(:foreground "DarkOrange2")))
         ('watch    (all-the-icons-material (if (eq state 'on) "visibility" "visibility_off")
@@ -324,6 +321,7 @@
 (declare-function test-flow--get-process "test-flow-core" (sess))
 (declare-function test-flow--conf "test-flow-core" (sess key default))
 (declare-function test-flow--session-root "test-flow-core" (sess))
+(declare-function test-flow--get-last-stderr-output "test-flow-core" (sess))
 (declare-function test-flow--summary-counters "test-flow-panel" (sum results))
 (declare-function test-flow--insert-status-block "test-flow-panel" (sess sum results))
 (declare-function test-flow-coverage--insert-panel-block "test-flow-coverage" (sess))
@@ -370,14 +368,21 @@ Returns plist: (:sess :sum :results :proc) and emits diagnostic logs."
     (list :sess sess :sum sum :results results :proc proc)))
 
 (defun test-flow-render-render-insert (ctx)
-  "Insert grouped suites using CTX (status moved to a separate split)."
+  "Insert either spinner or grouped suites using CTX (no Status/Coverage in main panel)."
   (let* ((sess (plist-get ctx :sess))
-         (sum (plist-get ctx :sum)) ;; kept for potential future use
+         (sum (plist-get ctx :sum))
          (results (plist-get ctx :results))
          (proc (plist-get ctx :proc)))
-    ;; Coverage block (optional)
-    (when (fboundp 'test-flow-coverage--insert-panel-block)
-      (ignore-errors (test-flow-coverage--insert-panel-block sess)))
+    ;; Show prominent parse error messages from stderr, if present
+    (let* ((stderr (and (fboundp 'test-flow--get-last-stderr-output)
+                        (ignore-errors (test-flow--get-last-stderr-output sess))))
+           (msg (when (and (stringp stderr)
+                           (string-match "End of file during parsing:[ \t]+\\(.+\\)" stderr))
+                  (let* ((full (string-trim (match-string 1 stderr)))
+                         (nm (file-name-nondirectory (directory-file-name full))))
+                    (format "End of file during parsing: %s" (or nm full))))))
+      (when msg
+        (insert (propertize (concat "  " msg "\n\n") 'face 'error))))
     ;; If a run is active for this session, show spinner + progress % instead of full suite list.
     (if (and proc (process-live-p proc))
         (let* ((frame (if (fboundp 'test-flow-spinner-frame) (test-flow-spinner-frame) "⠋"))
