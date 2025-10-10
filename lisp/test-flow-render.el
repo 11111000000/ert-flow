@@ -425,7 +425,9 @@ Returns plist: (:sess :sum :results :proc) and emits diagnostic logs."
       (let ((inhibit-read-only t))
         (erase-buffer)
         (let* ((ctx (test-flow-render-render-context))
-               (sess (plist-get ctx :sess)))
+               (sess (plist-get ctx :sess))
+               (sum (plist-get ctx :sum))
+               (results (plist-get ctx :results)))
           (when sess
             (if (local-variable-p 'test-flow--panel-status-folded (current-buffer))
                 (setq-local test-flow--panel-status-initialized t)
@@ -434,6 +436,9 @@ Returns plist: (:sess :sum :results :proc) and emits diagnostic logs."
                 (setq-local test-flow--panel-status-folded
                             (test-flow--conf sess 'panel-status-folded t))
                 (setq-local test-flow--panel-status-initialized t))))
+          ;; Insert Status block at top of main panel (tests expect it here)
+          (when (and (fboundp 'test-flow--insert-status-block) sess)
+            (test-flow--insert-status-block sess sum results))
           (test-flow-render-render-insert ctx))
         (test-flow-render-render-restore-point)))))
 
