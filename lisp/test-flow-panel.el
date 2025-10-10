@@ -659,5 +659,108 @@ When disabled, closes side-window панели текущего проекта (
           (when (window-parameter w 'window-side)
             (delete-window w)))))))
 
+;;;; Status split window
+
+(defcustom test-flow-status-split-side 'bottom
+  "Side where the Status split is displayed."
+  :type '(choice (const bottom) (const top) (const left) (const right))
+  :group 'test-flow-panel)
+
+(defcustom test-flow-status-split-height 0.25
+  "Height (fraction) of the Status split window."
+  :type 'number
+  :group 'test-flow-panel)
+
+(defun test-flow--status-buffer-name (root)
+  "Return status buffer name for project ROOT."
+  (format "*test-flow: status %s*" (file-name-nondirectory (directory-file-name root))))
+
+(defvar test-flow-status-mode-map
+  (let ((map (make-sparse-keymap)))
+    (set-keymap-parent map special-mode-map)
+    (define-key map (kbd "q") #'test-flow-status-close)
+    map)
+  "Keymap for `test-flow-status-mode' (q closes the split).")
+
+(define-derived-mode test-flow-status-mode special-mode "test-flow_status"
+  "Major mode for the Test Flow status split buffer."
+  (setq buffer-read-only t
+        truncate-lines t))
+
+(defun test-flow-status-visible-p (&optional root)
+  "Return non-nil if the Status split is visible for ROOT (current project if nil)."
+  (let* ((r (or root (test-flow--project-root)))
+         (bufname (test-flow--status-buffer-name r))
+         (buf (get-buffer bufname)))
+    (and buf (get-buffer-window buf 'visible))))
+
+(defun test-flow-status--render-into (buf sess)
+  "Render status into BUF for SESS (expanded)."
+  (when (buffer-live-p buf)
+    (with-current-buffer buf
+      (let ((inhibit-read-only t))
+        (erase-buffer)
+        (test-flow-status-mode)
+        ;; Force expanded status in this view
+        (setq-local test-flow--panel-status-folded nil)
+        (let ((sum (and sess (test-flow--get-last-summary sess)))
+              (res (and sess (test-flow--get-last-results sess))))
+          (test-flow--insert-status-block sess sum res))
+        (goto-char (point-min))))))
+
+;;;###autoload
+(defun test-flow-status-open ()
+  "Open Status split for current panel/session."
+  (interactive)
+  (let* ((sess (or (and (eq major-mode 'test-flow-panel-mode)
+                        (ignore-errors (test-flow--find-panel-session)))
+                   (test-flow--get-session (test-flow--project-root))))
+         (root (and sess (test-flow--session-root sess)))
+         (bufname (test-flow--status-buffer-name (or root (test-flow--project-root))))
+         (buf (get-buffer-create bufname)))
+    (test-flow-status--render-into buf sess)
+    (display-buffer-in-side-window
+     buf `((side . ,test-flow-status-split-side)
+           (window-height . ,test-flow-status-split-height)))
+    (when (fboundp 'test-flow-headerline-refresh)
+      (test-flow-headerline-refresh))
+    (force-mode-line-update t)))
+
+;;;###autoload
+(defun test-flow-status-close ()
+  "Close the Status split window (and kill its buffer)."
+  (interactive)
+  (let* ((root (test-flow--project-root))
+         (bufname (test-flow--status-buffer-name root))
+         (buf (get-buffer bufname)))
+    (when buf
+      (dolist (w (get-buffer-window-list buf nil t))
+        (when (window-live-p w)
+          (delete-window w)))
+      (kill-buffer buf)))
+  (when (fboundp 'test-flow-headerline-refresh)
+    (test-flow-headerline-refresh))
+  (force-mode-line-update t))
+
+;;;###autoload
+(defun test-flow-status-toggle ()
+  "Toggle the Status split for the current session."
+  (interactive)
+  (if (test-flow-status-visible-p)
+      (test-flow-status-close)
+    (test-flow-status-open)))
+
+;; Refresh status split after each run if visible
+(defun test-flow-status--after-run-refresh (sess _summary _results)
+  (when (and sess
+             (let ((root (test-flow--session-root sess)))
+               (test-flow-status-visible-p root)))
+    (let* ((root (test-flow--session-root sess))
+           (bufname (test-flow--status-buffer-name root))
+           (buf (get-buffer-create bufname)))
+      (test-flow-status--render-into buf sess))))
+
+(add-hook 'test-flow-after-run-hook #'test-flow-status--after-run-refresh)
+
 (provide 'test-flow-panel)
 ;;; test-flow-panel.el ends here

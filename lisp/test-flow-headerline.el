@@ -24,12 +24,20 @@
   :group 'test-flow)
 
 (defcustom test-flow-view-headerline-enable t
-  "When non-nil, show controls in the header-line of test-flow panel buffers."
+  "When non-nil, show project name and test status in the header-line of test-flow panel buffers."
+  :type 'boolean :group 'test-flow-headerline)
+
+(defcustom test-flow-view-modeline-enable t
+  "When non-nil, show controls in the mode-line of test-flow panel buffers."
   :type 'boolean :group 'test-flow-headerline)
 
 ;; Cache variables are buffer-local to each panel
 (defvar-local test-flow-headerline--cache-key nil)
 (defvar-local test-flow-headerline--cache-str nil)
+(defvar-local test-flow-modeline--cache-key nil)
+(defvar-local test-flow-modeline--cache-str nil)
+(defvar-local test-flow--saved-mode-line-format nil)
+(defvar-local test-flow--modeline-applied nil)
 
 (defvar test-flow--active-run-count 0)
 (defvar test-flow--run-queue nil)
@@ -115,11 +123,37 @@
      (funcall gap)
      (funcall mk "[Goto]" #'test-flow-goto-definition-at-point "Goto test definition (o)"))))
 
-(defun test-flow-headerline-format ()
-  "Return header-line content for test-flow panel buffers with caching."
+(defun test-flow-modeline--consume (e)
+  "Поглотить событие мыши в mode-line."
+  (interactive "e")
+  nil)
+
+(defun test-flow-modeline--on-mouse (e)
+  "Выполнить команду под курсором в mode-line (test-flow-action)."
+  (interactive "e")
+  (let* ((pos (event-end e))
+         (sp  (posn-string pos)))
+    (when (consp sp)
+      (let* ((str (car sp))
+             (idx (cdr sp))
+             (cmd (and (stringp str) (integerp idx)
+                       (get-text-property idx 'test-flow-action str))))
+        (when (and (symbolp cmd) (commandp cmd))
+          (run-at-time 0 nil (lambda () (call-interactively cmd)))))))
+  nil)
+
+(defvar test-flow-modeline--global-map
+  (let ((m (make-sparse-keymap)))
+    (define-key m [mode-line down-mouse-1] #'test-flow-modeline--consume)
+    (define-key m [mode-line drag-mouse-1] #'test-flow-modeline--consume)
+    (define-key m [mode-line mouse-1] #'test-flow-modeline--on-mouse)
+    m)
+  "Глобальная keymap для всей строки mode-line (перехватывает клики только в mode-line).")
+
+(defun test-flow-modeline-format ()
+  "Вернуть строку mode-line с контролами для панелей test-flow (с кэшем)."
   (when (eq major-mode 'test-flow-panel-mode)
-    (let* ((style (and (boundp 'test-flow-toolbar-style)
-                       test-flow-toolbar-style))
+    (let* ((style (and (boundp 'test-flow-toolbar-style) test-flow-toolbar-style))
            (icons-on (and (fboundp 'test-flow-controls-icons-available-p)
                           (test-flow-controls-icons-available-p)))
            (watch-on (ignore-errors
@@ -136,36 +170,85 @@
            (queued (and (boundp 'test-flow--run-queue) (length test-flow--run-queue)))
            (key (list style icons-on (and watch-on t) (and log-on t) active queued)))
       (let* ((s
-              (if (equal key test-flow-headerline--cache-key)
-                  test-flow-headerline--cache-str
-                (let* ((controls (or
-                                  (ignore-errors
-                                    (when (fboundp 'test-flow-view-controls-segments)
-                                      ;; Лёгкое смещение для иконок в header-line
-                                      (let ((test-flow-controls-icon-raise -0.08))
-                                        (test-flow-view-controls-segments))))
-                                  (test-flow-headerline--fallback-segments)))
-                       (out (mapconcat #'identity controls "")))
-                  (setq test-flow-headerline--cache-key key
-                        test-flow-headerline--cache-str out)
+              (if (equal key test-flow-modeline--cache-key)
+                  test-flow-modeline--cache-str
+                (let* ((controls
+                        (or (ignore-errors
+                              (when (fboundp 'test-flow-view-controls-segments)
+                                (let ((test-flow-controls-icon-raise 0.0))
+                                  (test-flow-view-controls-segments 'modeline))))
+                            (mapconcat #'identity (test-flow-headerline--fallback-segments) "")))
+                       (out (if (listp controls)
+                                (mapconcat #'identity controls "")
+                              (or controls ""))))
+                  (setq test-flow-modeline--cache-key key
+                        test-flow-modeline--cache-str out)
                   out))))
-        ;; Гарантируем наличие глобальной карты на всей строке (даже если в кэше старая строка).
         (when (stringp s)
           (add-text-properties 0 (length s)
-                               (list 'keymap test-flow-headerline--global-map
-                                     'local-map test-flow-headerline--global-map)
+                               (list 'keymap test-flow-modeline--global-map
+                                     'local-map test-flow-modeline--global-map)
                                s))
         s))))
 
+(defun test-flow-headerline-format ()
+  "Вернуть строку header-line с названием проекта и статусом тестов."
+  (when (eq major-mode 'test-flow-panel-mode)
+    (let* ((sess (and (fboundp 'test-flow--find-panel-session)
+                      (test-flow--find-panel-session)))
+           (root (and sess (fboundp 'test-flow--session-root)
+                      (test-flow--session-root sess)))
+           (proj (if root
+                     (file-name-nondirectory (directory-file-name root))
+                   ""))
+           (sum (and sess (fboundp 'test-flow--get-last-summary)
+                     (test-flow--get-last-summary sess)))
+           (res (and sess (fboundp 'test-flow--get-last-results)
+                     (test-flow--get-last-results sess)))
+           (counters
+            (cond
+             ((fboundp 'test-flow-render-format-counters)
+              (test-flow-render-format-counters sum res))
+             (t
+              (let* ((total (or (and (listp sum) (alist-get 'total sum))
+                                (length (or res '()))))
+                     (p (or (and (listp sum) (alist-get 'passed sum)) 0))
+                     (f (or (and (listp sum) (alist-get 'failed sum)) 0))
+                     (e (or (and (listp sum) (alist-get 'error sum)) 0))
+                     (s (or (and (listp sum) (alist-get 'skipped sum)) 0))
+                     (u (or (and (listp sum) (alist-get 'unexpected sum)) 0)))
+                (format "%d (P:%d F:%d E:%d S:%d U:%d)" total p f e s u))))))
+      (let ((title (propertize (or proj "project") 'face 'bold))
+            (sep " — "))
+        (concat " " title sep (or counters ""))))))
+
 (defun test-flow-headerline--apply (buffer)
-  "Apply or remove header-line in BUFFER according to feature flag."
+  "Apply/remove header-line and mode-line in BUFFER according to feature flags."
   (when (buffer-live-p buffer)
     (with-current-buffer buffer
       (when (eq major-mode 'test-flow-panel-mode)
-        (if test-flow-view-headerline-enable
+        ;; Header-line: project + counters
+        (if (and (boundp 'test-flow-view-headerline-enable)
+                 test-flow-view-headerline-enable)
             (setq header-line-format '((:eval (test-flow-headerline-format))))
           (when (equal header-line-format '((:eval (test-flow-headerline-format))))
             (setq header-line-format nil)))
+        ;; Mode-line: controls toolbar
+        (if (and (boundp 'test-flow-view-modeline-enable)
+                 test-flow-view-modeline-enable)
+            (unless (and (boundp 'test-flow--modeline-applied) test-flow--modeline-applied)
+              (setq-local test-flow--saved-mode-line-format mode-line-format)
+              (setq-local mode-line-format '((:eval (test-flow-modeline-format)))))
+          (when (and (boundp 'test-flow--modeline-applied)
+                     test-flow--modeline-applied)
+            (if (local-variable-p 'mode-line-format (current-buffer))
+                (setq-local mode-line-format (or test-flow--saved-mode-line-format mode-line-format))
+              (setq mode-line-format (or test-flow--saved-mode-line-format mode-line-format)))
+            (kill-local-variable 'test-flow--saved-mode-line-format)))
+        ;; Track whether applied (buffer-local)
+        (setq-local test-flow--modeline-applied (and (boundp 'test-flow-view-modeline-enable)
+                                                     test-flow-view-modeline-enable))
+        ;; Faces: remap header-line/mode-line faces for panel
         (ignore-errors
           (when (fboundp 'test-flow-view-controls--ensure-headerline-face)
             (test-flow-view-controls--ensure-headerline-face)))
@@ -173,24 +256,28 @@
 
 ;; Watcher: toggling feature flag should apply/remove header-line everywhere.
 (when (fboundp 'add-variable-watcher)
-  (add-variable-watcher
-   'test-flow-view-headerline-enable
-   (lambda (&rest _)
-     (dolist (buf (buffer-list))
-       (when (buffer-live-p buf)
-         (with-current-buffer buf
-           (when (eq major-mode 'test-flow-panel-mode)
-             (test-flow-headerline--apply (current-buffer)))))))))
+  (dolist (sym '(test-flow-view-headerline-enable
+                 test-flow-view-modeline-enable))
+    (add-variable-watcher
+     sym
+     (lambda (&rest _)
+       (dolist (buf (buffer-list))
+         (when (buffer-live-p buf)
+           (with-current-buffer buf
+             (when (eq major-mode 'test-flow-panel-mode)
+               (test-flow-headerline--apply (current-buffer))))))))))
 
 ;; Helper to clear caches (used by icon/control refresh)
 (defun test-flow-headerline-refresh ()
-  "Clear header-line caches and force redisplay in panel buffers."
+  "Clear header-line/modeline caches and force redisplay in panel buffers."
   (dolist (buf (buffer-list))
     (when (buffer-live-p buf)
       (with-current-buffer buf
         (when (eq major-mode 'test-flow-panel-mode)
           (setq-local test-flow-headerline--cache-key nil)
-          (setq-local test-flow-headerline--cache-str nil)))))
+          (setq-local test-flow-headerline--cache-str nil)
+          (setq-local test-flow-modeline--cache-key nil)
+          (setq-local test-flow-modeline--cache-str nil)))))
   (force-mode-line-update t))
 
 ;; Apply to existing panel buffers on load

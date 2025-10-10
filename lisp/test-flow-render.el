@@ -370,12 +370,12 @@ Returns plist: (:sess :sum :results :proc) and emits diagnostic logs."
     (list :sess sess :sum sum :results results :proc proc)))
 
 (defun test-flow-render-render-insert (ctx)
-  "Insert Status block and grouped suites using CTX."
+  "Insert grouped suites using CTX (status moved to a separate split)."
   (let* ((sess (plist-get ctx :sess))
-         (sum (plist-get ctx :sum))
+         (sum (plist-get ctx :sum)) ;; kept for potential future use
          (results (plist-get ctx :results))
          (proc (plist-get ctx :proc)))
-    (test-flow--insert-status-block sess sum results)
+    ;; Coverage block (optional)
     (when (fboundp 'test-flow-coverage--insert-panel-block)
       (ignore-errors (test-flow-coverage--insert-panel-block sess)))
     ;; If a run is active for this session, show spinner + progress % instead of full suite list.

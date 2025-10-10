@@ -48,7 +48,8 @@
 
 ;; Default icon map for controls (single or stateful (on/off)).
 (defcustom test-flow-controls-icon-map
-  '((run         . (material . "play_arrow"))
+  '((stats       . (material . "bar_chart"))
+    (run         . (material . "play_arrow"))
     (run-failed  . (material . "replay"))
     (watch       . ((on  . (material . "visibility"))
                     (off . (material . "visibility_off"))))
@@ -71,7 +72,8 @@ Either a cons (PROVIDER . NAME), or an alist of ((on . (PROVIDER . NAME)) (off .
   :group 'test-flow-controls-icons)
 
 (defcustom test-flow-controls-icon-face-map
-  '((run        . (:foreground "SpringGreen3"))
+  '((stats      . (:foreground "LightSkyBlue3"))
+    (run        . (:foreground "SpringGreen3"))
     (run-failed . (:foreground "DarkOrange2"))
     (copy       . (:foreground "SteelBlue3"))
     (clear      . (:foreground "tomato"))

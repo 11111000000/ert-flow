@@ -29,6 +29,8 @@
 (declare-function test-flow-dashboard "test-flow-panel" ())
 (declare-function test-flow--find-panel-session "test-flow-panel" ())
 (declare-function test-flow-toggle-logging "test-flow-panel" ())
+(declare-function test-flow-status-toggle "test-flow-panel" ())
+(declare-function test-flow-status-visible-p "test-flow-panel" (&optional root))
 (defvar test-flow-log-enabled nil)
 (defvar test-flow-toolbar-style 'auto)
 
@@ -42,8 +44,16 @@
   "Default header-line face for test-flow panel buffers."
   :group 'test-flow-view-controls)
 
+(defface test-flow-modeline
+  '((t :inherit default))
+  "Mode-line face for test-flow panel buffers (inherits from `default`)."
+  :group 'test-flow-view-controls)
+
 (defvar-local test-flow--headerline-face-cookie nil
   "Face-remap cookie for remapping header-line face in test-flow panel buffer.")
+
+(defvar-local test-flow--modeline-face-cookie nil
+  "Face-remap cookie for remapping mode-line face in test-flow panel buffer.")
 
 (defun test-flow-view-controls--panel-buffers ()
   "Return list of test-flow panel buffers."
@@ -52,23 +62,31 @@
            collect buf))
 
 (defun test-flow-view-controls--ensure-headerline-face ()
-  "Ensure test-flow panel buffers use `test-flow-headerline' for header-line."
+  "Ensure test-flow panel buffers use `test-flow-headerline' on header-line and `test-flow-modeline' on mode-line."
   (dolist (buf (test-flow-view-controls--panel-buffers))
     (when (buffer-live-p buf)
       (with-current-buffer buf
+        ;; Header-line remap
         (when test-flow--headerline-face-cookie
           (ignore-errors
             (face-remap-remove-relative test-flow--headerline-face-cookie))
           (setq test-flow--headerline-face-cookie nil))
         (setq test-flow--headerline-face-cookie
               (face-remap-add-relative 'header-line 'test-flow-headerline))
+        ;; Mode-line remap
+        (when test-flow--modeline-face-cookie
+          (ignore-errors
+            (face-remap-remove-relative test-flow--modeline-face-cookie))
+          (setq test-flow--modeline-face-cookie nil))
+        (setq test-flow--modeline-face-cookie
+              (face-remap-add-relative 'mode-line 'test-flow-modeline))
         (force-mode-line-update t)))))
 
 ;; Apply face now if buffers already exist.
 (test-flow-view-controls--ensure-headerline-face)
 
 (defcustom test-flow-headerline-controls-order
-  '(run run-failed :gap watch :gap copy clear :gap detect goto :gap sessions dashboard :gap logging)
+  '(stats :gap run run-failed :gap watch :gap copy clear :gap detect goto :gap sessions dashboard :gap logging)
   "Order of controls in header-line. Use :gap for spacing."
   :type '(repeat (choice symbol (const :gap)))
   :group 'test-flow-view-controls)
@@ -97,8 +115,34 @@
                                   (buffer-name) (or root "?") (if on "t" "nil"))
     (if on 'on 'off)))
 
+(defun test-flow-view-controls--status-split-state ()
+  "Return 'on or 'off for Status split toggle in the current panel buffer."
+  (let ((root nil))
+    (ignore-errors
+      (when (fboundp 'test-flow--find-panel-session)
+        (let ((s (test-flow--find-panel-session)))
+          (when (and s (fboundp 'test-flow--session-root))
+            (setq root (test-flow--session-root s))))))
+    (let ((vis (and (fboundp 'test-flow-status-visible-p)
+                    (test-flow-status-visible-p root))))
+      (test-flow-view-controls--log "status-split: panel=%s root=%s visible=%s"
+                                    (buffer-name) (or root "?") (if vis "t" "nil"))
+      (if vis 'on 'off))))
+
 (defcustom test-flow-controls-registry
   `(
+    (stats
+     :type toggle
+     :icon-key stats
+     :command test-flow-status-toggle
+     :help "Toggle status split (q)"
+     :enabled-p ,(lambda () t)
+     :visible-p ,(lambda () t)
+     :state-fn ,#'test-flow-view-controls--status-split-state
+     :label-fn ,(lambda (style state)
+                  (pcase style
+                    ((or 'icons 'auto) " [Σ]")
+                    (_ (format " [Status: %s]" (if (eq state 'on) "On" "Off"))))))
     (run
      :type action
      :icon-key run
