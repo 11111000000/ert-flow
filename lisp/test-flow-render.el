@@ -436,9 +436,7 @@ Returns plist: (:sess :sum :results :proc) and emits diagnostic logs."
                 (setq-local test-flow--panel-status-folded
                             (test-flow--conf sess 'panel-status-folded t))
                 (setq-local test-flow--panel-status-initialized t))))
-          ;; Insert Status block at top of main panel (tests expect it here)
-          (when (and (fboundp 'test-flow--insert-status-block) sess)
-            (test-flow--insert-status-block sess sum results))
+
           (test-flow-render-render-insert ctx))
         (test-flow-render-render-restore-point)))))
 

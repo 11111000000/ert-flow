@@ -365,6 +365,11 @@ selected runner:
     (let ((win (display-buffer-in-side-window buf `((side . ,side) (window-width . ,width)))))
       (when (and win (called-interactively-p 'interactive))
         (select-window win)))
+    (when (and (boundp 'test-flow-status-open-on-panel-open)
+               test-flow-status-open-on-panel-open
+               (fboundp 'test-flow-status-open))
+      (with-current-buffer buf
+        (ignore-errors (test-flow-status-open))))
     (let ((test-flow--panel-buffer-name bufname))
       (test-flow--render))))
 
@@ -664,6 +669,11 @@ When disabled, closes side-window панели текущего проекта (
             (delete-window w)))))))
 
 ;;;; Status split window
+
+(defcustom test-flow-status-open-on-panel-open t
+  "If non-nil, automatically open the Status split when opening the panel."
+  :type 'boolean
+  :group 'test-flow-panel)
 
 (defcustom test-flow-status-split-side 'same
   "Side where the Status split is displayed.

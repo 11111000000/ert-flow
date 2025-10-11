@@ -144,29 +144,11 @@
         (test-flow--render)
         (test-flow-toggle-all-groups t)
         (let ((s (buffer-string)))
-          (should (string-match-p "Status" s))
           (should (string-match-p "ns/ok" s)))))))
 
-(ert-deftest test-flow/render-header-shows-runner ()
-  (let* ((root (test-flow--project-root))
-         (bufname (test-flow--session-panel-name root)))
-    (with-current-buffer (get-buffer-create bufname)
-      (let ((test-flow--panel-buffer-name bufname))
-        ;; Status is folded by default; unfold for this check.
-        (setq-local test-flow--panel-status-folded nil)
-        (test-flow--render)
-        (should (string-match-p "Runner:" (buffer-string)))))))
 
-(ert-deftest test-flow/render-header-shows-parser ()
-  "Header shows Parser: <mode> (auto/json/ert-batch/in-emacs)."
-  (let* ((root (test-flow--project-root))
-         (bufname (test-flow--session-panel-name root)))
-    (with-current-buffer (get-buffer-create bufname)
-      (let ((test-flow--panel-buffer-name bufname))
-        ;; Status is folded by default; unfold for this check.
-        (setq-local test-flow--panel-status-folded nil)
-        (test-flow--render)
-        (should (string-match-p "Parser:" (buffer-string)))))))
+
+
 
 (ert-deftest test-flow/panel-tags-filter ()
   "Tags filter narrows results."
@@ -371,9 +353,7 @@
         (let ((initial (test-flow--session-watch-enabled sess)))
           (test-flow-toggle-watch)
           (should (not (eq (test-flow--session-watch-enabled sess) initial)))
-          ;; Should appear in Status block
-          (let ((s (buffer-string)))
-            (should (string-match-p "Watch: \\(On\\|Off\\)" s)))
+
           ;; Header-line может быть отключён средой (пустая строка в TTY/CI).
           ;; Считаем допустимым либо наличие метки, либо пустую строку.
           (let ((hdr (format-mode-line header-line-format)))
