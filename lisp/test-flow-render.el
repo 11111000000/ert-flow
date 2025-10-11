@@ -386,11 +386,34 @@ Returns plist: (:sess :sum :results :proc) and emits diagnostic logs."
     ;; Show prominent parse error messages from stderr, if present
     (let* ((stderr (and (fboundp 'test-flow--get-last-stderr-output)
                         (ignore-errors (test-flow--get-last-stderr-output sess))))
-           (msg (when (and (stringp stderr)
-                           (string-match "End of file during parsing:[ \t]+\\(.+\\)" stderr))
-                  (let* ((full (string-trim (match-string 1 stderr)))
-                         (nm (file-name-nondirectory (directory-file-name full))))
-                    (format "End of file during parsing: %s" (or nm full))))))
+           (msg
+            (when (stringp stderr)
+              (or
+               ;; EOF parse error with explicit path
+               (when (string-match "End of file during parsing:[ \t]+\\(.+\\)" stderr)
+                 (let* ((full (string-trim (match-string 1 stderr)))
+                        (nm (file-name-nondirectory (directory-file-name full))))
+                   (format "End of file during parsing: %s" (or nm full))))
+               ;; Generic read/parse errors: try to extract file path from backtrace
+               (let* ((err-kind (cond
+                                 ((string-match "Invalid read syntax" stderr) "Invalid read syntax")
+                                 ((string-match "invalid-read-syntax" stderr) "Invalid read syntax")
+                                 ((string-match "End of file during parsing" stderr) "End of file during parsing")
+                                 (t nil)))
+                      (file (or
+                             (and (string-match "load-with-code-conversion(\"\\([^\"]+\\.el\\)\"" stderr)
+                                  (match-string 1 stderr))
+                             (and (string-match "load(\"\\([^\"]+\\.el\\)\"" stderr)
+                                  (match-string 1 stderr))
+                             ;; Fallback: any absolute .el path
+                             (and (string-match "\\(/[^ \n\t\"]+\\.el\\)" stderr)
+                                  (match-string 1 stderr)))))
+                 (when (or err-kind file)
+                   (let* ((full (string-trim (or file "")))
+                          (nm (and (> (length full) 0)
+                                   (file-name-nondirectory (directory-file-name full)))))
+                     (format "%s: %s" (or err-kind "Read error")
+                             (if (and nm (> (length nm) 0)) nm full)))))))))
       (when msg
         (insert (propertize (concat "  " msg "\n\n") 'face 'error))))
     ;; If a run is active for this session, show spinner + progress % instead of full suite list.
