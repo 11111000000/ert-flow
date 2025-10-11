@@ -367,9 +367,12 @@ selected runner:
         (select-window win)))
     (when (and (boundp 'test-flow-status-open-on-panel-open)
                test-flow-status-open-on-panel-open
-               (fboundp 'test-flow-status-open))
+               (fboundp 'test-flow-status-open)
+               (not (test-flow--conf sess 'status-opened-on-panel-open nil)))
       (with-current-buffer buf
-        (ignore-errors (test-flow-status-open))))
+        (ignore-errors (test-flow-status-open)))
+      ;; Mark as opened once to avoid re-opening on subsequent renders/runs.
+      (test-flow--set-conf sess 'status-opened-on-panel-open t))
     (let ((test-flow--panel-buffer-name bufname))
       (test-flow--render))))
 

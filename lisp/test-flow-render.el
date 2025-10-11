@@ -83,7 +83,8 @@
 
 ;;;###autoload
 (defun test-flow-render-format-counters (summary results)
-  "Return colored counters string: \"N (P:x F:y E:z S:u U:w)\"."
+  "Return colored counters string: \"N (P:x F:y E:z S:s U:u)\".
+Zero values are shown with a gray face; positive values use bright faces."
   (let* ((total (or (alist-get 'total summary) (length results)))
          (p (or (alist-get 'passed summary)
                 (cl-count-if (lambda (r) (eq (plist-get r :status) 'pass)) results)))
@@ -95,18 +96,27 @@
                 (cl-count-if (lambda (r) (memq (plist-get r :status) '(skip xfail))) results)))
          (u (or (alist-get 'unexpected summary)
                 (cl-count-if (lambda (r) (memq (plist-get r :status) '(fail error))) results)))
-         (u-face (if (> (or u 0) 0) 'test-flow-face-fail 'test-flow-face-pass)))
+         (p0 (or p 0))
+         (f0 (or f 0))
+         (e0 (or e 0))
+         (s0 (or s 0))
+         (u0 (or u 0))
+         (p-face (if (> p0 0) 'test-flow-face-pass 'shadow))
+         (f-face (if (> f0 0) 'test-flow-face-fail 'shadow))
+         (e-face (if (> e0 0) 'test-flow-face-error 'shadow))
+         (s-face (if (> s0 0) 'test-flow-face-skip 'shadow))
+         (u-face (if (> u0 0) 'test-flow-face-fail 'shadow)))
     (concat
      (format "%d (" (or total 0))
-     (propertize (format "P:%d" (or p 0)) 'face 'test-flow-face-pass)
+     (propertize (format "P:%d" p0) 'face p-face)
      " "
-     (propertize (format "F:%d" (or f 0)) 'face 'test-flow-face-fail)
+     (propertize (format "F:%d" f0) 'face f-face)
      " "
-     (propertize (format "E:%d" (or e 0)) 'face 'test-flow-face-error)
+     (propertize (format "E:%d" e0) 'face e-face)
      " "
-     (propertize (format "S:%d" (or s 0)) 'face 'test-flow-face-skip)
+     (propertize (format "S:%d" s0) 'face s-face)
      " "
-     (propertize (format "U:%d" (or u 0)) 'face u-face)
+     (propertize (format "U:%d" u0) 'face u-face)
      ")")))
 
 ;; ---------------------------------------------------------------------------
