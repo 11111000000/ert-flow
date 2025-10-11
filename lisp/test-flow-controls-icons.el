@@ -82,14 +82,14 @@ The effective value is: test-flow-controls-icon-v-adjust + DELTA."
     (run-failed  . (material . "replay"))
     (watch       . ((on  . (material . "visibility"))
                     (off . (material . "visibility_off"))))
-    (copy        . (material . "content_copy"))
-    (clear       . (material . "delete"))
+    (copy        . (material . "share"))
     (detect      . (material . "search"))
     (goto        . (material  . "open_in_new"))
-    (sessions    . (material . "format_list_bulleted"))
+    (sessions    . (material . "menu"))
     (dashboard   . (material . "dashboard"))
     (logging     . ((on  . (material . "bug_report"))
-                    (off . (material . "bug_report")))))
+                    (off . (material . "bug_report"))))
+    (clear       . (material . "delete")))
   "Mapping of control keys to all-the-icons specs.
 Either a cons (PROVIDER . NAME), or an alist of ((on . (PROVIDER . NAME)) (off . ...))."
   :type '(alist :key-type symbol
